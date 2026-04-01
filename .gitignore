@@ -1,0 +1,34 @@
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Certificate Artifacts (Prevents accidental key uploads if run locally)
+*.key
+*.crt
+*.csr
+*.pfx
+*.p7b
+*.p7c
+*.pem
+*-Bundle.zip
+order_id.txt
+
+# Exclude Sectigo from Rangers Tracker remote
+Sectigo/
+
+#  Misc
+*.exe
+*.spec
+build/
+dist/
+
+# Local Output Directories (Adjust if you output inside the project folder)
+~Staging/
+certificates/
