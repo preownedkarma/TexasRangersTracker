@@ -1,0 +1,418 @@
+{% extends "base.html" %}
+{% block title %}Current Series{% endblock %}
+
+{% block content %}
+{% if series is none %}
+  <div class="alert alert-warning mt-4" role="alert">
+    <strong>No data yet.</strong> Run <code>python sync.py</code> inside the
+    <code>rangers_tracker/</code> folder to load game data.
+  </div>
+{% else %}
+
+{# ── Series header ──────────────────────────────────────────────────────── #}
+<div class="series-header">
+  <h2>TEX vs {{ series.opponent }}</h2>
+  <div class="series-record mt-1">
+    <span class="result-w">{{ series.wins }}W</span>
+    &nbsp;&ndash;&nbsp;
+    <span class="result-l">{{ series.losses }}L</span>
+    &nbsp;&mdash;&nbsp;
+    <span style="color:#8899bb; font-size:0.9rem;">
+      {{ series.wins + series.losses }} game{{ 's' if series.wins + series.losses != 1 }}
+    </span>
+  </div>
+</div>
+
+{# ── Summary table ──────────────────────────────────────────────────────── #}
+<h5 class="section-title">Game-by-Game Summary</h5>
+<div class="table-scroll mb-4">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>H/A</th>
+      <th>Res</th>
+      <th>Score</th>
+      <th>Venue</th>
+      <th title="At-Bats">AB</th>
+      <th title="Hits">H</th>
+      <th title="Home Runs">HR</th>
+      <th title="RBI">RBI</th>
+      <th title="Walks">BB</th>
+      <th title="Strikeouts">SO</th>
+      <th title="Batting Average">AVG</th>
+      <th title="On-Base Pct">OBP</th>
+      <th title="Innings Pitched">IP</th>
+      <th title="Earned Runs">ER</th>
+      <th title="WHIP">WHIP</th>
+      <th title="K/BB">K/BB</th>
+      <th title="Quality Start">QS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for g in series.games %}
+    {% set avg_f = g.g_avg | float %}
+    {% set whip_f = g.g_whip | float if g.g_whip != '-.--' else 1.40 %}
+    <tr>
+      <td>{{ g.date }}</td>
+      <td>{{ 'Home' if g.rangers_side == 'home' else 'Away' }}</td>
+      <td>
+        {% if g.result == 'W' %}
+          <span class="result-w">W</span>
+        {% else %}
+          <span class="result-l">L</span>
+        {% endif %}
+      </td>
+      <td>{{ g.score }}</td>
+      <td style="font-size:0.78rem; color:#8899bb;">
+        {{ g.venue }}
+        {% if g.roof and g.roof != 'Open Air' %}
+          <br><span style="font-size:0.7rem;">({{ g.roof }})</span>
+        {% endif %}
+      </td>
+      {# Hitting cols #}
+      <td>{{ g.g_ab }}</td>
+      <td>{{ g.g_h }}</td>
+      <td>{% if g.g_hr > 0 %}<span class="stat-warn">{{ g.g_hr }}</span>{% else %}0{% endif %}</td>
+      <td>{{ g.g_rbi }}</td>
+      <td>{{ g.g_bb }}</td>
+      <td>{{ g.g_so }}</td>
+      <td class="{% if avg_f >= 0.300 %}stat-good{% elif avg_f < 0.200 %}stat-bad{% endif %}">
+        {{ g.g_avg }}
+      </td>
+      <td class="{% if g.g_obp | float >= 0.360 %}stat-good{% elif g.g_obp | float < 0.280 %}stat-bad{% endif %}">
+        {{ g.g_obp }}
+      </td>
+      {# Pitching cols #}
+      <td>{{ g.g_ip }}</td>
+      <td>{% if g.g_er >= 5 %}<span class="stat-bad">{{ g.g_er }}</span>{% else %}{{ g.g_er }}{% endif %}</td>
+      <td class="{% if whip_f <= 1.20 %}stat-good{% elif whip_f >= 1.60 %}stat-bad{% elif whip_f >= 1.40 %}stat-warn{% endif %}">
+        {{ g.g_whip }}
+      </td>
+      <td>{{ g.g_kbb }}</td>
+      <td class="{% if g.g_qs == 'YES' %}qs-yes{% else %}qs-no{% endif %}">{{ g.g_qs }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{# ── Per-game accordion ─────────────────────────────────────────────────── #}
+<h5 class="section-title mt-4">Game Detail</h5>
+<div class="accordion mb-5" id="gamesAccordion">
+{% for g in series.games %}
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="heading{{ loop.index }}">
+      <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#collapse{{ loop.index }}"
+              aria-expanded="false"
+              aria-controls="collapse{{ loop.index }}">
+        <span style="min-width:90px;">{{ g.date }}</span>
+        &nbsp;
+        <span class="me-2">vs {{ series.opponent }}</span>
+        {% if g.result == 'W' %}
+          <span class="result-w me-2">W</span>
+        {% else %}
+          <span class="result-l me-2">L</span>
+        {% endif %}
+        <span class="text-secondary" style="font-size:0.82rem;">{{ g.score }}</span>
+        {% if g.weather_condition %}
+          <span class="ms-auto text-secondary" style="font-size:0.75rem;">
+            {{ g.weather_condition }}, {{ g.weather_temp }}&deg;F &mdash; {{ g.weather_wind }}
+          </span>
+        {% endif %}
+      </button>
+    </h2>
+    <div id="collapse{{ loop.index }}" class="accordion-collapse collapse"
+         aria-labelledby="heading{{ loop.index }}"
+         data-bs-parent="#gamesAccordion">
+      <div class="accordion-body">
+
+        <div class="row g-4">
+          {# Batters table #}
+          <div class="col-12 col-xl-7">
+            <h6 style="color:#aac4ff;">Batting</h6>
+            <div class="table-scroll">
+            <table class="table table-sm table-bordered table-rangers">
+              <thead>
+                <tr>
+                  <th>Player</th><th>AB</th><th>H</th><th>HR</th>
+                  <th>RBI</th><th>BB</th><th>SO</th><th>AVG</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for b in g.batters %}
+                {% set b_avg_f = b.avg | float %}
+                <tr>
+                  <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
+                  <td>{{ b.ab }}</td>
+                  <td>{{ b.h }}</td>
+                  <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
+                  <td>{{ b.rbi }}</td>
+                  <td>{{ b.bb }}</td>
+                  <td>{{ b.so }}</td>
+                  <td class="{% if b_avg_f >= 0.300 %}stat-good{% elif b_avg_f < 0.200 and b.ab >= 2 %}stat-bad{% endif %}">
+                    {{ b.avg }}
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-secondary">No batter data.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </div>
+
+          {# Pitchers table #}
+          <div class="col-12 col-xl-5">
+            <h6 style="color:#aac4ff;">Pitching</h6>
+            <div class="table-scroll">
+            <table class="table table-sm table-bordered table-rangers">
+              <thead>
+                <tr>
+                  <th>Player</th><th>IP</th><th>H</th><th>ER</th>
+                  <th>BB</th><th>SO</th><th>WHIP</th><th>QS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in g.pitchers %}
+                {% set p_whip_f = p.whip | float if p.whip != '-.--' else 1.40 %}
+                <tr>
+                  <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+                  <td>{{ p.ip_str }}</td>
+                  <td>{{ p.h }}</td>
+                  <td>{% if p.er >= 4 %}<span class="stat-bad">{{ p.er }}</span>{% else %}{{ p.er }}{% endif %}</td>
+                  <td>{{ p.bb }}</td>
+                  <td>{{ p.so }}</td>
+                  <td class="{% if p_whip_f <= 1.20 %}stat-good{% elif p_whip_f >= 1.60 %}stat-bad{% elif p_whip_f >= 1.40 %}stat-warn{% endif %}">
+                    {{ p.whip }}
+                  </td>
+                  <td class="{% if p.qs == 'YES' %}qs-yes{% else %}qs-no{% endif %}">{{ p.qs }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-secondary">No pitcher data.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        </div>{# /row #}
+
+        {# Weather + venue detail #}
+        {% if g.weather_condition or g.venue %}
+        <div class="mt-2" style="font-size:0.78rem; color:#8899bb;">
+          {% if g.venue %}
+            <strong>Venue:</strong> {{ g.venue }}
+            {% if g.roof %} ({{ g.roof }}){% endif %}
+            &mdash;
+            {{ g.day_night }} Game
+            {% if g.game_time %} &mdash; {{ g.game_time }}{% endif %}
+          {% endif %}
+          {% if g.weather_condition %}
+            &nbsp;|&nbsp;
+            <strong>Weather:</strong> {{ g.weather_condition }},
+            {{ g.weather_temp }}&deg;F, {{ g.weather_wind }}
+          {% endif %}
+        </div>
+        {% endif %}
+
+      </div>{# /accordion-body #}
+    </div>{# /accordion-collapse #}
+  </div>{# /accordion-item #}
+{% endfor %}
+</div>{# /accordion #}
+
+{# ── Cumulative series totals ───────────────────────────────────────────── #}
+<h5 class="section-title">Series Cumulative Totals</h5>
+<div class="row g-4">
+  <div class="col-12 col-xl-7">
+    <h6 style="color:#aac4ff;">Batting</h6>
+    <div class="table-scroll">
+    <table class="table table-sm table-bordered table-rangers">
+      <thead>
+        <tr>
+          <th>Player</th><th>AB</th><th>H</th><th>HR</th>
+          <th>RBI</th><th>BB</th><th>SO</th><th>AVG</th><th>OBP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in series.cum_batters %}
+        {% set avg_f = b.avg | float %}
+        <tr>
+          <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
+          <td>{{ b.ab }}</td>
+          <td>{{ b.h }}</td>
+          <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
+          <td>{{ b.rbi }}</td>
+          <td>{{ b.bb }}</td>
+          <td>{{ b.so }}</td>
+          <td class="{% if avg_f >= 0.300 %}stat-good{% elif avg_f < 0.200 and b.ab >= 4 %}stat-bad{% endif %}">
+            {{ b.avg }}
+          </td>
+          <td class="{% if b.obp | float >= 0.360 %}stat-good{% elif b.obp | float < 0.280 and b.ab >= 4 %}stat-bad{% endif %}">
+            {{ b.obp }}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-secondary">No data.</td></tr>
+        {% endfor %}
+        {# Totals row #}
+        {% if series.cum_batters %}
+        <tr class="totals-row">
+          <td><em>Totals</em></td>
+          <td>{{ series.cum_ab }}</td>
+          <td>{{ series.cum_h }}</td>
+          <td>{{ series.cum_hr }}</td>
+          <td>{{ series.cum_rbi }}</td>
+          <td>{{ series.cum_bb }}</td>
+          <td>{{ series.cum_so }}</td>
+          <td>{{ series.cum_avg }}</td>
+          <td>&mdash;</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-5">
+    <h6 style="color:#aac4ff;">Pitching</h6>
+    <div class="table-scroll">
+    <table class="table table-sm table-bordered table-rangers">
+      <thead>
+        <tr>
+          <th>Player</th><th>IP</th><th>H</th><th>ER</th>
+          <th>BB</th><th>SO</th><th>ERA</th><th>WHIP</th><th>K/BB</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in series.cum_pitchers %}
+        {% set w_f = p.whip | float if p.whip != '-.--' else 1.40 %}
+        {% set e_f = p.era  | float if p.era  != '-.--' else 5.0  %}
+        <tr>
+          <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+          <td>{{ p.ip }}</td>
+          <td>{{ p.h }}</td>
+          <td>{% if p.er >= 4 %}<span class="stat-bad">{{ p.er }}</span>{% else %}{{ p.er }}{% endif %}</td>
+          <td>{{ p.bb }}</td>
+          <td>{{ p.so }}</td>
+          <td class="{% if e_f <= 3.00 %}stat-good{% elif e_f >= 5.50 %}stat-bad{% elif e_f >= 4.50 %}stat-warn{% endif %}">
+            {{ p.era }}
+          </td>
+          <td class="{% if w_f <= 1.20 %}stat-good{% elif w_f >= 1.60 %}stat-bad{% elif w_f >= 1.40 %}stat-warn{% endif %}">
+            {{ p.whip }}
+          </td>
+          <td>{{ p.kbb }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-secondary">No data.</td></tr>
+        {% endfor %}
+        {# Totals row #}
+        {% if series.cum_pitchers %}
+        <tr class="totals-row">
+          <td><em>Totals</em></td>
+          <td>{{ series.cum_ip }}</td>
+          <td>&mdash;</td>
+          <td>{{ series.cum_er }}</td>
+          <td>&mdash;</td>
+          <td>&mdash;</td>
+          <td>&mdash;</td>
+          <td>{{ series.cum_whip }}</td>
+          <td>&mdash;</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>{# /row #}
+
+{# ── Next series ────────────────────────────────────────────────────────── #}
+{% if next_series %}
+<h5 class="section-title mt-5">Up Next</h5>
+<div class="card bg-dark border-secondary mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center"
+       style="background-color:#0a1628; border-color:#1e3a6e;">
+    <span style="font-size:1rem; font-weight:700; color:#cdd9f0;">
+      TEX vs {{ next_series.opponent }}
+    </span>
+    <span class="badge" style="background-color:#003278; font-size:0.75rem;">
+      {{ next_series.home_away }} &mdash; {{ next_series.venue }}
+    </span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-scroll">
+    <table class="table table-sm table-bordered table-rangers align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Time</th>
+          <th>H/A</th>
+          <th>TEX Starter</th>
+          <th>Opp Starter</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in next_series.games %}
+        <tr>
+          <td>{{ g.date }}</td>
+          <td style="color:#8899bb; font-size:0.82rem;">{{ g.time or "TBD" }}</td>
+          <td>{{ g.home_away }}</td>
+          <td>
+            {% if g.rangers_starter %}
+              <span class="stat-good">{{ g.rangers_starter }}</span>
+            {% else %}
+              <span class="text-secondary">TBD</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if g.opp_starter %}
+              {{ g.opp_starter }}
+            {% else %}
+              <span class="text-secondary">TBD</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}{# /series is none #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Fallback accordion toggle — fires even if Bootstrap JS data-api isn't ready
+document.querySelectorAll(".accordion-button").forEach(btn => {
+  btn.addEventListener("click", function () {
+    const targetId = this.getAttribute("data-bs-target");
+    const panel    = document.querySelector(targetId);
+    if (!panel) return;
+
+    const isOpen = panel.classList.contains("show");
+
+    // Collapse all panels in this accordion
+    const accordion = this.closest(".accordion");
+    accordion.querySelectorAll(".accordion-collapse").forEach(p => {
+      p.classList.remove("show");
+    });
+    accordion.querySelectorAll(".accordion-button").forEach(b => {
+      b.classList.add("collapsed");
+      b.setAttribute("aria-expanded", "false");
+    });
+
+    // If it was closed, open it
+    if (!isOpen) {
+      panel.classList.add("show");
+      this.classList.remove("collapsed");
+      this.setAttribute("aria-expanded", "true");
+    }
+  });
+});
+</script>
+{% endblock %}

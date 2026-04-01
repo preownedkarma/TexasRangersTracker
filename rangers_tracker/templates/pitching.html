@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Season Pitching{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="section-title mb-0">2026 Season Pitching</h4>
+  <a href="/season" class="btn btn-sm btn-outline-secondary">&larr; Season Overview</a>
+</div>
+
+{% if not pitchers %}
+  <div class="alert alert-warning">No pitching data yet. Run <code>python sync.py</code>.</div>
+{% else %}
+<div class="table-scroll">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle" id="pitchingTable">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th class="sortable" data-col="1" title="Games">G</th>
+      <th class="sortable" data-col="2" title="Innings Pitched">IP</th>
+      <th class="sortable" data-col="3" title="Hits Allowed">H</th>
+      <th class="sortable" data-col="4" title="Earned Runs">ER</th>
+      <th class="sortable" data-col="5" title="Walks">BB</th>
+      <th class="sortable" data-col="6" title="Strikeouts">SO</th>
+      <th class="sortable" data-col="7" title="Earned Run Average">ERA</th>
+      <th class="sortable" data-col="8" title="Walks + Hits per Inning">WHIP</th>
+      <th class="sortable" data-col="9" title="Strikeout-to-Walk Ratio">K/BB</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in pitchers %}
+    <tr>
+      <td>
+        <a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a>
+      </td>
+      <td>{{ p.g }}</td>
+      <td>{{ p.ip }}</td>
+      <td>{{ p.h }}</td>
+      <td>
+        {% if p.era_val <= 3.00 %}
+          <span class="stat-good">{{ p.era }}</span>
+        {% elif p.era_val >= 5.00 %}
+          <span class="stat-bad">{{ p.era }}</span>
+        {% elif p.era_val >= 4.00 %}
+          <span class="stat-warn">{{ p.era }}</span>
+        {% else %}
+          {{ p.era }}
+        {% endif %}
+      </td>
+      <td>{{ p.bb }}</td>
+      <td>{{ p.so }}</td>
+      <td>
+        {% if p.era_val <= 3.00 %}
+          <span class="stat-good">{{ p.era }}</span>
+        {% elif p.era_val >= 5.00 %}
+          <span class="stat-bad">{{ p.era }}</span>
+        {% else %}
+          {{ p.era }}
+        {% endif %}
+      </td>
+      <td>
+        {% if p.whip_val <= 1.20 %}
+          <span class="stat-good">{{ p.whip }}</span>
+        {% elif p.whip_val >= 1.60 %}
+          <span class="stat-bad">{{ p.whip }}</span>
+        {% elif p.whip_val >= 1.40 %}
+          <span class="stat-warn">{{ p.whip }}</span>
+        {% else %}
+          {{ p.whip }}
+        {% endif %}
+      </td>
+      <td>{{ p.kbb }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{# ── Rolling 10-game table ────────────────────────────────────────────── #}
+<h5 class="section-title mt-4">Last 10 Games — Pitching</h5>
+{% if not rolling %}
+  <p class="text-secondary" style="font-size:0.82rem;">Not enough games yet.</p>
+{% else %}
+<p class="text-secondary" style="font-size:0.82rem;">
+  Stats from the most recent 10 team games. Sorted by IP.
+</p>
+<div class="table-scroll">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle" id="rollingTable">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th class="sortable" data-col="1" title="Games">G</th>
+      <th class="sortable" data-col="2" title="Innings Pitched">IP</th>
+      <th class="sortable" data-col="3" title="Hits Allowed">H</th>
+      <th class="sortable" data-col="4" title="Earned Runs">ER</th>
+      <th class="sortable" data-col="5" title="Walks">BB</th>
+      <th class="sortable" data-col="6" title="Strikeouts">SO</th>
+      <th class="sortable" data-col="7" title="Earned Run Average">ERA</th>
+      <th class="sortable" data-col="8" title="Walks + Hits per Inning">WHIP</th>
+      <th class="sortable" data-col="9" title="Strikeout-to-Walk Ratio">K/BB</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in rolling %}
+    <tr>
+      <td><a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a></td>
+      <td>{{ p.g }}</td>
+      <td>{{ p.ip }}</td>
+      <td>{{ p.h }}</td>
+      <td>{{ p.er }}</td>
+      <td>{{ p.bb }}</td>
+      <td>{{ p.so }}</td>
+      <td>
+        {% if p.era_val <= 3.00 %}
+          <span class="stat-good">{{ p.era }}</span>
+        {% elif p.era_val >= 5.00 %}
+          <span class="stat-bad">{{ p.era }}</span>
+        {% elif p.era_val >= 4.00 %}
+          <span class="stat-warn">{{ p.era }}</span>
+        {% else %}
+          {{ p.era }}
+        {% endif %}
+      </td>
+      <td>
+        {% if p.whip_val <= 1.20 %}
+          <span class="stat-good">{{ p.whip }}</span>
+        {% elif p.whip_val >= 1.60 %}
+          <span class="stat-bad">{{ p.whip }}</span>
+        {% elif p.whip_val >= 1.40 %}
+          <span class="stat-warn">{{ p.whip }}</span>
+        {% else %}
+          {{ p.whip }}
+        {% endif %}
+      </td>
+      <td>{{ p.kbb }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="text-secondary mt-2" style="font-size:0.75rem;">
+  {{ rolling | length }} pitcher{{ 's' if rolling | length != 1 }} shown &mdash;
+  <span class="stat-good">Blue</span> = ERA &le; 3.00 / WHIP &le; 1.20 &nbsp;|&nbsp;
+  <span class="stat-warn">Yellow</span> = ERA 4.00&ndash;4.99 / WHIP 1.40&ndash;1.59 &nbsp;|&nbsp;
+  <span class="stat-bad">Red</span> = ERA &ge; 5.00 / WHIP &ge; 1.60
+</p>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function wireSort(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const headers = table.querySelectorAll('th.sortable');
+    let lastCol = -1, ascending = true;
+    headers.forEach(th => {
+      th.addEventListener('click', () => {
+        const col = parseInt(th.dataset.col);
+        ascending = (col === lastCol) ? !ascending : true;
+        lastCol = col;
+        headers.forEach(h => h.classList.remove('asc', 'desc'));
+        th.classList.add(ascending ? 'asc' : 'desc');
+        const tbody = table.querySelector('tbody');
+        const rows  = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          const aText = a.cells[col].textContent.trim();
+          const bText = b.cells[col].textContent.trim();
+          const aVal  = parseFloat(aText.replace(/[^0-9.\-]/g, '')) || aText.toLowerCase();
+          const bVal  = parseFloat(bText.replace(/[^0-9.\-]/g, '')) || bText.toLowerCase();
+          if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return ascending ? aVal - bVal : bVal - aVal;
+          }
+          return ascending
+            ? String(aVal).localeCompare(String(bVal))
+            : String(bVal).localeCompare(String(aVal));
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  }
+  wireSort('pitchingTable');
+  wireSort('rollingTable');
+})();
+</script>
+{% endblock %}

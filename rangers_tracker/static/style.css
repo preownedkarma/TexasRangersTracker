@@ -1,0 +1,198 @@
+/* Rangers Tracker — custom styles on top of Bootstrap 5 dark theme */
+
+/* ── Stat color classes ───────────────────────────────────────────────────── */
+.stat-good  { color: #4da6ff; font-weight: 600; }
+.stat-bad   { color: #ff4d4d; }
+.stat-warn  { color: #ffd700; }
+.result-w   { color: #00cc66; font-weight: bold; }
+.result-l   { color: #ff4d4d; font-weight: bold; }
+
+/* ── Navbar ───────────────────────────────────────────────────────────────── */
+.navbar-brand        { color: #C0111F !important; font-size: 1.3rem; font-weight: 700; }
+.navbar-brand:hover  { color: #e01428 !important; }
+.navbar              { border-bottom: 2px solid #003278; }
+.nav-link.active     { color: #C0111F !important; font-weight: 600; }
+
+/* ── Sortable table headers ───────────────────────────────────────────────── */
+th.sortable             { cursor: pointer; user-select: none; }
+th.sortable:hover       { color: #4da6ff; }
+th.sortable.asc::after  { content: " ▲"; font-size: 0.7rem; }
+th.sortable.desc::after { content: " ▼"; font-size: 0.7rem; }
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+.table-rangers th {
+    background-color: #003278;
+    color: #ffffff;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+.table-rangers td  { font-size: 0.85rem; vertical-align: middle; }
+.table-rangers tr:hover > td { background-color: rgba(0, 50, 120, 0.25); }
+
+/* ── Series header ────────────────────────────────────────────────────────── */
+.series-header {
+    background: linear-gradient(135deg, #001a4d 0%, #003278 60%, #1a1a2e 100%);
+    border-left: 5px solid #C0111F;
+    padding: 1.2rem 1.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+.series-header h2 { margin: 0; font-size: 1.6rem; font-weight: 700; }
+.series-record    { font-size: 1.1rem; color: #aac4ff; }
+
+/* ── Accordion override ───────────────────────────────────────────────────── */
+.accordion-button:not(.collapsed) { background-color: #001f5b; color: #fff; }
+.accordion-button                  { background-color: #0a1628; color: #cdd9f0; }
+.accordion-body                    { background-color: #060d1a; }
+
+/* ── Season page ──────────────────────────────────────────────────────────── */
+.record-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(135deg, #001a4d 0%, #0a1628 100%);
+    border: 1px solid #1e3a6e;
+    border-left: 5px solid #C0111F;
+    border-radius: 0.5rem;
+    padding: 1rem 1.4rem;
+}
+.record-banner-main { flex: 0 0 auto; }
+.record-badge {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #4da6ff;
+    letter-spacing: 0.05em;
+}
+.record-banner-pill {
+    flex: 0 0 auto;
+    background-color: #0d1f3c;
+    border: 1px solid #2a4a7a;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    text-align: center;
+    min-width: 90px;
+}
+.record-banner-pill.pill-in  { border-color: #4da6ff; }
+.record-banner-pill.pill-out { border-color: #ff4d4d; }
+.pill-label { font-size: 0.65rem; color: #8899bb; text-transform: uppercase; letter-spacing: 0.08em; }
+.pill-val   { font-size: 1.25rem; font-weight: 700; color: #cdd9f0; line-height: 1.2; }
+.pill-sub   { font-size: 0.7rem; color: #8899bb; margin-top: 0.1rem; }
+.pill-in  .pill-val { color: #4da6ff; }
+.pill-out .pill-val { color: #ff4d4d; }
+.section-title {
+    color: #aac4ff;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid #1e3a6e;
+    padding-bottom: 0.3rem;
+    margin-bottom: 0.8rem;
+}
+
+/* ── Player page ──────────────────────────────────────────────────────────── */
+.player-totals-bar {
+    background-color: #0a1628;
+    border: 1px solid #1e3a6e;
+    border-radius: 0.4rem;
+    padding: 1rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.player-totals-bar .stat-box { text-align: center; }
+.player-totals-bar .stat-val { font-size: 1.5rem; font-weight: 700; color: #4da6ff; }
+.player-totals-bar .stat-lbl { font-size: 0.72rem; color: #8899bb; text-transform: uppercase; }
+
+/* ── Charts ───────────────────────────────────────────────────────────────── */
+.chart-container {
+    position: relative;
+    background-color: #060d1a;
+    border: 1px solid #1e3a6e;
+    border-radius: 0.4rem;
+    padding: 1rem;
+}
+
+/* ── Cumulative totals row ────────────────────────────────────────────────── */
+.totals-row td { font-weight: 600; background-color: rgba(0, 50, 120, 0.35) !important; }
+
+/* ── QS badge ─────────────────────────────────────────────────────────────── */
+.qs-yes { color: #4da6ff; font-weight: 600; }
+.qs-no  { color: #555; }
+
+/* ── Scrollable table wrapper ─────────────────────────────────────────────── */
+.table-scroll { overflow-x: auto; }
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+footer {
+    border-top: 1px solid #1e3a6e;
+    padding: 0.8rem 0;
+    font-size: 0.75rem;
+    color: #556;
+    text-align: center;
+}
+
+/* ── Split record tiles ───────────────────────────────────────────────────── */
+.split-tile {
+    background-color: #0a1628;
+    border: 1px solid #1e3a6e;
+    border-radius: 0.5rem;
+    padding: 0.7rem 1.2rem;
+    min-width: 90px;
+    text-align: center;
+}
+.split-label {
+    font-size: 0.68rem;
+    color: #8899bb;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.2rem;
+}
+.split-record {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+.split-dash { color: #334; margin: 0 0.15rem; }
+.split-pct  { font-size: 0.75rem; color: #8899bb; margin-top: 0.1rem; }
+
+/* ── Team rank tiles ──────────────────────────────────────────────────────── */
+.rank-tile {
+    background-color: #0a1628;
+    border: 1px solid #1e3a6e;
+    border-radius: 0.5rem;
+    padding: 1rem 1.4rem;
+    min-width: 110px;
+    text-align: center;
+}
+.rank-label {
+    font-size: 0.68rem;
+    color: #8899bb;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.25rem;
+}
+.rank-val {
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: #cdd9f0;
+}
+.rank-pos {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-top: 0.15rem;
+    color: #cdd9f0;
+}
+.rank-of {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: #8899bb;
+}
+
+/* ── General utility ──────────────────────────────────────────────────────── */
+a.player-link           { color: #4da6ff; text-decoration: none; }
+a.player-link:hover     { color: #80c0ff; text-decoration: underline; }
+.text-rangers-red       { color: #C0111F; }
+.text-rangers-navy      { color: #003278; }
+.bg-rangers-navy        { background-color: #003278; }

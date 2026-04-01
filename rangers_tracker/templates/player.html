@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}{{ player.player_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="section-title mb-0">
+    {{ player.player_name }}
+    <small class="text-secondary ms-2" style="font-size:0.75rem;">
+      {{ "PITCHER" if player.is_pitcher else "BATTER" }}
+    </small>
+  </h4>
+  <a href="javascript:history.back()" class="btn btn-sm btn-outline-secondary">&larr; Back</a>
+</div>
+
+{# ── Season totals bar ───────────────────────────────────────────────────── #}
+<div class="card bg-dark border-secondary mb-4">
+  <div class="card-body py-2">
+    <div class="d-flex flex-wrap gap-4">
+      {% if not player.is_pitcher %}
+        <div class="text-center"><div class="stat-label">G</div><div class="stat-value">{{ player.totals.g }}</div></div>
+        <div class="text-center"><div class="stat-label">AB</div><div class="stat-value">{{ player.totals.ab }}</div></div>
+        <div class="text-center"><div class="stat-label">H</div><div class="stat-value">{{ player.totals.h }}</div></div>
+        <div class="text-center"><div class="stat-label">HR</div><div class="stat-value stat-warn">{{ player.totals.hr }}</div></div>
+        <div class="text-center"><div class="stat-label">RBI</div><div class="stat-value">{{ player.totals.rbi }}</div></div>
+        <div class="text-center"><div class="stat-label">BB</div><div class="stat-value">{{ player.totals.bb }}</div></div>
+        <div class="text-center"><div class="stat-label">SO</div><div class="stat-value">{{ player.totals.so }}</div></div>
+        <div class="text-center">
+          <div class="stat-label">AVG</div>
+          <div class="stat-value
+            {% if player.totals.avg | float >= 0.300 %}stat-good
+            {% elif player.totals.avg | float < 0.200 %}stat-bad{% endif %}">
+            {{ player.totals.avg }}
+          </div>
+        </div>
+        <div class="text-center">
+          <div class="stat-label">OBP</div>
+          <div class="stat-value
+            {% if player.totals.obp | float >= 0.360 %}stat-good
+            {% elif player.totals.obp | float < 0.280 %}stat-bad{% endif %}">
+            {{ player.totals.obp }}
+          </div>
+        </div>
+      {% else %}
+        <div class="text-center"><div class="stat-label">G</div><div class="stat-value">{{ player.totals.g }}</div></div>
+        <div class="text-center"><div class="stat-label">IP</div><div class="stat-value">{{ player.totals.ip }}</div></div>
+        <div class="text-center"><div class="stat-label">H</div><div class="stat-value">{{ player.totals.h }}</div></div>
+        <div class="text-center"><div class="stat-label">ER</div><div class="stat-value">{{ player.totals.er }}</div></div>
+        <div class="text-center"><div class="stat-label">BB</div><div class="stat-value">{{ player.totals.bb }}</div></div>
+        <div class="text-center"><div class="stat-label">SO</div><div class="stat-value">{{ player.totals.so }}</div></div>
+        <div class="text-center">
+          <div class="stat-label">ERA</div>
+          <div class="stat-value
+            {% if player.totals.era != '-.--' and player.totals.era | float <= 3.00 %}stat-good
+            {% elif player.totals.era != '-.--' and player.totals.era | float >= 5.00 %}stat-bad{% endif %}">
+            {{ player.totals.era }}
+          </div>
+        </div>
+        <div class="text-center">
+          <div class="stat-label">WHIP</div>
+          <div class="stat-value
+            {% if player.totals.whip != '-.--' and player.totals.whip | float <= 1.20 %}stat-good
+            {% elif player.totals.whip != '-.--' and player.totals.whip | float >= 1.60 %}stat-bad{% endif %}">
+            {{ player.totals.whip }}
+          </div>
+        </div>
+        <div class="text-center"><div class="stat-label">K/BB</div><div class="stat-value">{{ player.totals.kbb }}</div></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── Rolling stat chart ──────────────────────────────────────────────────── #}
+<div class="card bg-dark border-secondary mb-4">
+  <div class="card-header text-secondary" style="font-size:0.82rem;">
+    {{ player.chart_label }}
+  </div>
+  <div class="card-body">
+    <canvas id="rollingChart" height="90"></canvas>
+  </div>
+</div>
+
+{# ── Game log ────────────────────────────────────────────────────────────── #}
+<h5 class="section-title">Game Log</h5>
+<div class="table-scroll">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Opp</th>
+      <th>Res</th>
+      {% if not player.is_pitcher %}
+        <th>AB</th><th>H</th><th>HR</th><th>RBI</th><th>BB</th><th>SO</th><th>AVG</th>
+      {% else %}
+        <th>IP</th><th>H</th><th>ER</th><th>BB</th><th>SO</th><th>WHIP</th>
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for g in player.game_log %}
+    <tr>
+      <td>{{ g.date }}</td>
+      <td>{{ g.opp }}</td>
+      <td class="{{ 'result-w' if g.result == 'W' else 'result-l' }}">{{ g.result }}</td>
+      {% if not player.is_pitcher %}
+        <td>{{ g.ab }}</td>
+        <td>{{ g.h }}</td>
+        <td>{% if g.hr > 0 %}<span class="stat-warn">{{ g.hr }}</span>{% else %}{{ g.hr }}{% endif %}</td>
+        <td>{{ g.rbi }}</td>
+        <td>{{ g.bb }}</td>
+        <td>{{ g.so }}</td>
+        <td>
+          {% set avg_f = g.avg | float %}
+          {% if avg_f >= 0.300 %}<span class="stat-good">{{ g.avg }}</span>
+          {% elif avg_f < 0.200 and g.ab > 0 %}<span class="stat-bad">{{ g.avg }}</span>
+          {% else %}{{ g.avg }}{% endif %}
+        </td>
+      {% else %}
+        <td>{{ g.ip }}</td>
+        <td>{{ g.h }}</td>
+        <td>{% if g.er >= 3 %}<span class="stat-bad">{{ g.er }}</span>{% elif g.er > 0 %}<span class="stat-warn">{{ g.er }}</span>{% else %}<span class="stat-good">{{ g.er }}</span>{% endif %}</td>
+        <td>{{ g.bb }}</td>
+        <td>{{ g.so }}</td>
+        <td>
+          {% set wh = g.whip | float %}
+          {% if wh <= 1.20 %}<span class="stat-good">{{ g.whip }}</span>
+          {% elif wh >= 1.60 %}<span class="stat-bad">{{ g.whip }}</span>
+          {% else %}{{ g.whip }}{% endif %}
+        </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const labels = {{ player.chart_labels | safe }};
+const values = {{ player.chart_values | safe }};
+const isPitcher = {{ 'true' if player.is_pitcher else 'false' }};
+
+new Chart(document.getElementById("rollingChart"), {
+  type: "line",
+  data: {
+    labels: labels,
+    datasets: [{
+      label: {{ player.chart_label | tojson }},
+      data: values,
+      borderColor: isPitcher ? "#ff4d4d" : "#4da6ff",
+      backgroundColor: isPitcher ? "rgba(255,77,77,0.08)" : "rgba(77,166,255,0.08)",
+      borderWidth: 2,
+      pointRadius: 3,
+      tension: 0.3,
+      fill: true,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: { mode: "index", intersect: false }
+    },
+    scales: {
+      x: {
+        ticks: { color: "#aaa", maxTicksLimit: 12 },
+        grid:  { color: "#333" }
+      },
+      y: {
+        ticks: { color: "#aaa" },
+        grid:  { color: "#333" },
+        reverse: isPitcher   // lower WHIP = better, so flip axis for pitchers
+      }
+    }
+  }
+});
+</script>
+{% endblock %}

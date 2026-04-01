@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Season Overview{% endblock %}
+
+{% block content %}
+{% if overview is none %}
+  <div class="alert alert-warning mt-4" role="alert">
+    <strong>No data yet.</strong> Run <code>python sync.py</code> inside the
+    <code>rangers_tracker/</code> folder to load game data.
+  </div>
+{% else %}
+
+{# ── Record banner ──────────────────────────────────────────────────────── #}
+{% set gp = overview.wins + overview.losses %}
+{% set po = overview.playoff %}
+<div class="record-banner mb-4">
+
+  {# W-L + pace #}
+  <div class="record-banner-main">
+    <div style="font-size:0.72rem; color:#8899bb; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:0.1rem;">
+      2026 Record
+    </div>
+    <div class="record-badge">
+      <span class="result-w">{{ overview.wins }}</span>
+      <span style="color:#556;">&ndash;</span>
+      <span class="result-l">{{ overview.losses }}</span>
+    </div>
+    <div style="font-size:0.8rem; color:#8899bb; margin-top:0.2rem;">
+      {{ gp }} GP
+      {% if gp > 0 %}
+        &nbsp;&mdash;&nbsp;{{ "%.3f"|format(overview.wins / gp) | replace("0.", ".") }} win%
+        &nbsp;&mdash;&nbsp;{{ po.proj_wins if po.proj_wins else "—" }} proj. W
+      {% endif %}
+    </div>
+  </div>
+
+  {# Standings pill #}
+  {% if po.division_rank %}
+  <div class="record-banner-pill">
+    <div class="pill-label">AL West</div>
+    <div class="pill-val">{{ po.division_rank }}</div>
+    <div class="pill-sub">{{ po.division_gb }} GB</div>
+  </div>
+  {% endif %}
+
+  {# Wild card pill #}
+  {% if po.wc_rank %}
+  <div class="record-banner-pill {% if po.wc_rank <= 3 %}pill-in{% else %}pill-out{% endif %}">
+    <div class="pill-label">Wild Card</div>
+    <div class="pill-val">{{ po.wc_rank }}{% if po.wc_rank <= 3 %} ✓{% endif %}</div>
+    <div class="pill-sub">{{ po.wc_gb }} GB</div>
+  </div>
+  {% endif %}
+
+  {# Playoff odds pill #}
+  {% if po.playoff_pct %}
+  {% set pct_f = po.playoff_pct | replace('%','') | float %}
+  <div class="record-banner-pill {% if pct_f >= 60 %}pill-in{% elif pct_f < 25 %}pill-out{% endif %}">
+    <div class="pill-label">Playoff Odds</div>
+    <div class="pill-val">{{ po.playoff_pct }}</div>
+    <div class="pill-sub">via FanGraphs</div>
+  </div>
+  {% endif %}
+
+</div>
+
+{# ── Split records ──────────────────────────────────────────────────────── #}
+{% macro split_tile(label, w, l) %}
+<div class="split-tile">
+  <div class="split-label">{{ label }}</div>
+  <div class="split-record">
+    <span class="result-w">{{ w }}</span>
+    <span class="split-dash">&ndash;</span>
+    <span class="result-l">{{ l }}</span>
+  </div>
+  {% set gp = w + l %}
+  {% if gp > 0 %}
+  <div class="split-pct">{{ "%.3f"|format(w / gp) | replace("0.", ".") }}</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="row g-3 mb-2">
+  <div class="col-12 col-md-4">
+    <h5 class="section-title">Home / Away</h5>
+    <div class="d-flex gap-3 flex-wrap">
+      {{ split_tile("Home", overview.home_w, overview.home_l) }}
+      {{ split_tile("Away", overview.away_w, overview.away_l) }}
+    </div>
+  </div>
+  <div class="col-12 col-md-3">
+    <h5 class="section-title">Day / Night</h5>
+    <div class="d-flex gap-3 flex-wrap">
+      {{ split_tile("Day",   overview.day_w,   overview.day_l)   }}
+      {{ split_tile("Night", overview.night_w, overview.night_l) }}
+    </div>
+  </div>
+  <div class="col-12 col-md-5">
+    <h5 class="section-title">By Time Zone (Home Park)</h5>
+    <div class="d-flex gap-3 flex-wrap">
+      {% for r in overview.tz_records %}
+        {{ split_tile(r.tz, r.w, r.l) }}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-5">
+    <h5 class="section-title">Division / Non-Division</h5>
+    <div class="d-flex gap-3 flex-wrap">
+      {{ split_tile("AL West", overview.div_w,  overview.div_l)  }}
+      {{ split_tile("Non-Div", overview.ndiv_w, overview.ndiv_l) }}
+    </div>
+  </div>
+</div>
+
+{# ── Leaderboard previews ───────────────────────────────────────────────── #}
+<div class="row g-4 mb-4">
+
+  {# Top batters #}
+  <div class="col-12 col-lg-6">
+    <h5 class="section-title">Top Batters (by AVG)</h5>
+    <div class="table-scroll">
+    <table class="table table-sm table-bordered table-rangers">
+      <thead>
+        <tr><th>Player</th><th>G</th><th>AB</th><th>H</th><th>HR</th><th>RBI</th><th>AVG</th><th>OBP</th></tr>
+      </thead>
+      <tbody>
+        {% set sorted_batters = overview.top_batters | sort(attribute='avg_val', reverse=True) %}
+        {% for b in sorted_batters %}
+        {% set avg_f = b.avg_val %}
+        <tr>
+          <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
+          <td>{{ b.g }}</td>
+          <td>{{ b.ab }}</td>
+          <td>{{ b.h }}</td>
+          <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
+          <td>{{ b.rbi }}</td>
+          <td class="{% if avg_f >= 0.300 %}stat-good{% elif avg_f < 0.200 %}stat-bad{% endif %}">{{ b.avg }}</td>
+          <td class="{% if b.obp_val >= 0.360 %}stat-good{% elif b.obp_val < 0.280 %}stat-bad{% endif %}">{{ b.obp }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-secondary">No batting data.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <a href="/season/batting" class="btn btn-outline-secondary btn-sm mt-1">Full Batting Stats &rarr;</a>
+  </div>
+
+  {# Top pitchers #}
+  <div class="col-12 col-lg-6">
+    <h5 class="section-title">Top Pitchers (by IP)</h5>
+    <div class="table-scroll">
+    <table class="table table-sm table-bordered table-rangers">
+      <thead>
+        <tr><th>Player</th><th>G</th><th>IP</th><th>ER</th><th>ERA</th><th>WHIP</th><th>K/BB</th></tr>
+      </thead>
+      <tbody>
+        {% for p in overview.top_pitchers %}
+        {% set w_f = p.whip_val %}
+        {% set e_f = p.era_val %}
+        <tr>
+          <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+          <td>{{ p.g }}</td>
+          <td>{{ p.ip }}</td>
+          <td>{% if p.er >= 4 %}<span class="stat-bad">{{ p.er }}</span>{% else %}{{ p.er }}{% endif %}</td>
+          <td class="{% if e_f <= 3.00 %}stat-good{% elif e_f >= 5.50 %}stat-bad{% elif e_f >= 4.50 %}stat-warn{% endif %}">{{ p.era }}</td>
+          <td class="{% if w_f <= 1.20 %}stat-good{% elif w_f >= 1.60 %}stat-bad{% elif w_f >= 1.40 %}stat-warn{% endif %}">{{ p.whip }}</td>
+          <td>{{ p.kbb }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-secondary">No pitching data.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <a href="/season/pitching" class="btn btn-outline-secondary btn-sm mt-1">Full Pitching Stats &rarr;</a>
+  </div>
+
+</div>{# /row #}
+
+{# ── Team Rankings ───────────────────────────────────────────────────────── #}
+{% if overview.ranks %}
+{% macro rank_tile(label, stat, lower_is_better=false) %}
+  {% if stat %}
+    {% set n = stat.rank_n %}
+    {% set of = stat.of %}
+    {% if lower_is_better %}
+      {% set color_class = 'stat-good' if n <= (of / 3) | int else ('stat-bad' if n >= (of * 2 / 3) | int else '') %}
+    {% else %}
+      {% set color_class = 'stat-good' if n <= (of / 3) | int else ('stat-bad' if n >= (of * 2 / 3) | int else '') %}
+    {% endif %}
+    <div class="rank-tile">
+      <div class="rank-label">{{ label }}</div>
+      <div class="rank-val {{ color_class }}">{{ stat.val }}</div>
+      <div class="rank-pos {{ color_class }}">{{ stat.rank }} <span class="rank-of">of {{ stat.of }}</span></div>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+<div class="row g-4 mt-1">
+  <div class="col-12 col-lg-6">
+    <h5 class="section-title">Team Hitting Ranks</h5>
+    <div class="d-flex gap-3 flex-wrap">
+      {{ rank_tile("Team AVG",  overview.ranks.avg) }}
+      {{ rank_tile("Team OBP",  overview.ranks.obp) }}
+      {{ rank_tile("Team RBI",  overview.ranks.rbi) }}
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <h5 class="section-title">Team Pitching Ranks</h5>
+    <div class="d-flex gap-3 flex-wrap">
+      {{ rank_tile("Team ERA",  overview.ranks.era,  lower_is_better=true) }}
+      {{ rank_tile("Team WHIP", overview.ranks.whip, lower_is_better=true) }}
+      {{ rank_tile("Team ER",   overview.ranks.er,   lower_is_better=true) }}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}{# /overview is none #}
+{% endblock %}
+
+{% block scripts %}{% endblock %}

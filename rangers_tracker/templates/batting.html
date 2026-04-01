@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Batting Leaderboard{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0" style="color:#aac4ff;">2026 Batting Leaderboard</h4>
+  <a href="/season" class="btn btn-outline-secondary btn-sm">&larr; Season Overview</a>
+</div>
+
+{% if not batters %}
+  <div class="alert alert-warning" role="alert">
+    No batting data. Run <code>python sync.py</code> to load game data.
+  </div>
+{% else %}
+<p class="text-secondary" style="font-size:0.82rem;">
+  Click any column header to sort. Minimum plate appearances not enforced.
+</p>
+<div class="table-scroll">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle" id="battingTable">
+  <thead>
+    <tr>
+      <th class="sortable" data-col="0">Player</th>
+      <th class="sortable" data-col="1">G</th>
+      <th class="sortable" data-col="2">AB</th>
+      <th class="sortable" data-col="3">H</th>
+      <th class="sortable" data-col="4">HR</th>
+      <th class="sortable" data-col="5">RBI</th>
+      <th class="sortable" data-col="6">BB</th>
+      <th class="sortable" data-col="7">SO</th>
+      <th class="sortable" data-col="8">AVG</th>
+      <th class="sortable" data-col="9">OBP</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in batters %}
+    {% set avg_f = b.avg_val %}
+    {% set obp_f = b.obp_val %}
+    <tr>
+      <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
+      <td>{{ b.g }}</td>
+      <td>{{ b.ab }}</td>
+      <td>{{ b.h }}</td>
+      <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
+      <td>{{ b.rbi }}</td>
+      <td>{{ b.bb }}</td>
+      <td>{{ b.so }}</td>
+      <td class="{% if avg_f >= 0.300 %}stat-good{% elif avg_f < 0.200 and b.ab >= 10 %}stat-bad{% endif %}">
+        {{ b.avg }}
+      </td>
+      <td class="{% if obp_f >= 0.360 %}stat-good{% elif obp_f < 0.280 and b.ab >= 10 %}stat-bad{% endif %}">
+        {{ b.obp }}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="text-secondary mt-2" style="font-size:0.75rem;">
+  {{ batters | length }} player{{ 's' if batters | length != 1 }} shown &mdash;
+  <span class="stat-good">Blue</span> = AVG &ge; .300 / OBP &ge; .360 &nbsp;|&nbsp;
+  <span class="stat-bad">Red</span> = AVG &lt; .200 / OBP &lt; .280 (min 10 AB)
+</p>
+
+{# ── Rolling 10-game table ────────────────────────────────────────────── #}
+<h5 class="section-title mt-4">Last 10 Games — Batting</h5>
+{% if not rolling %}
+  <p class="text-secondary" style="font-size:0.82rem;">Not enough games yet.</p>
+{% else %}
+<p class="text-secondary" style="font-size:0.82rem;">
+  Stats from the most recent 10 team games. Sorted by AVG. Pitchers excluded.
+</p>
+<div class="table-scroll">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle" id="rollingTable">
+  <thead>
+    <tr>
+      <th class="sortable" data-col="0">Player</th>
+      <th class="sortable" data-col="1">G</th>
+      <th class="sortable" data-col="2">AB</th>
+      <th class="sortable" data-col="3">H</th>
+      <th class="sortable" data-col="4">HR</th>
+      <th class="sortable" data-col="5">RBI</th>
+      <th class="sortable" data-col="6">BB</th>
+      <th class="sortable" data-col="7">SO</th>
+      <th class="sortable" data-col="8">AVG</th>
+      <th class="sortable" data-col="9">OBP</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in rolling %}
+    {% set avg_f = b.avg_val %}
+    {% set obp_f = b.obp_val %}
+    <tr>
+      <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
+      <td>{{ b.g }}</td>
+      <td>{{ b.ab }}</td>
+      <td>{{ b.h }}</td>
+      <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
+      <td>{{ b.rbi }}</td>
+      <td>{{ b.bb }}</td>
+      <td>{{ b.so }}</td>
+      <td class="{% if avg_f >= 0.300 %}stat-good{% elif avg_f < 0.200 and b.ab >= 5 %}stat-bad{% endif %}">
+        {{ b.avg }}
+      </td>
+      <td class="{% if obp_f >= 0.360 %}stat-good{% elif obp_f < 0.280 and b.ab >= 5 %}stat-bad{% endif %}">
+        {{ b.obp }}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="text-secondary mt-2" style="font-size:0.75rem;">
+  {{ rolling | length }} player{{ 's' if rolling | length != 1 }} shown &mdash;
+  <span class="stat-good">Blue</span> = AVG &ge; .300 / OBP &ge; .360 &nbsp;|&nbsp;
+  <span class="stat-bad">Red</span> = AVG &lt; .200 / OBP &lt; .280 (min 5 AB)
+</p>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function wireSort(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const headers = table.querySelectorAll('th.sortable');
+    let lastCol = -1, ascending = true;
+    headers.forEach(th => {
+      th.addEventListener('click', () => {
+        const col = parseInt(th.dataset.col);
+        ascending = (col === lastCol) ? !ascending : true;
+        lastCol = col;
+        headers.forEach(h => h.classList.remove('asc', 'desc'));
+        th.classList.add(ascending ? 'asc' : 'desc');
+        const tbody = table.querySelector('tbody');
+        const rows  = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          const aText = a.cells[col].textContent.trim();
+          const bText = b.cells[col].textContent.trim();
+          const aVal  = parseFloat(aText.replace(/[^0-9.\-]/g, '')) || aText.toLowerCase();
+          const bVal  = parseFloat(bText.replace(/[^0-9.\-]/g, '')) || bText.toLowerCase();
+          if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return ascending ? aVal - bVal : bVal - aVal;
+          }
+          return ascending
+            ? String(aVal).localeCompare(String(bVal))
+            : String(bVal).localeCompare(String(aVal));
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  }
+  wireSort('battingTable');
+  wireSort('rollingTable');
+})();
+</script>
+{% endblock %}
