@@ -16,14 +16,16 @@
     <tr>
       <th>Name</th>
       <th class="sortable" data-col="1" title="Games">G</th>
-      <th class="sortable" data-col="2" title="Innings Pitched">IP</th>
-      <th class="sortable" data-col="3" title="Hits Allowed">H</th>
+      <th class="sortable" data-col="2" title="Outs Pitched">OUTS</th>
+      <th class="sortable" data-col="3" title="Innings Pitched">IP</th>
+      <th class="sortable" data-col="4" title="Hits Allowed">H</th>
       <th class="sortable" data-col="4" title="Earned Runs">ER</th>
       <th class="sortable" data-col="5" title="Walks">BB</th>
       <th class="sortable" data-col="6" title="Strikeouts">SO</th>
       <th class="sortable" data-col="7" title="Earned Run Average">ERA</th>
       <th class="sortable" data-col="8" title="Walks + Hits per Inning">WHIP</th>
-      <th class="sortable" data-col="9" title="Strikeout-to-Walk Ratio">K/BB</th>
+      <th class="sortable" data-col="10" title="Fielding Independent Pitching (est)">FIP*</th>
+      <th class="sortable" data-col="11" title="Strikeout-to-Walk Ratio">K/BB</th>
     </tr>
   </thead>
   <tbody>
@@ -33,76 +35,7 @@
         <a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a>
       </td>
       <td>{{ p.g }}</td>
-      <td>{{ p.ip }}</td>
-      <td>{{ p.h }}</td>
-      <td>
-        {% if p.era_val <= 3.00 %}
-          <span class="stat-good">{{ p.era }}</span>
-        {% elif p.era_val >= 5.00 %}
-          <span class="stat-bad">{{ p.era }}</span>
-        {% elif p.era_val >= 4.00 %}
-          <span class="stat-warn">{{ p.era }}</span>
-        {% else %}
-          {{ p.era }}
-        {% endif %}
-      </td>
-      <td>{{ p.bb }}</td>
-      <td>{{ p.so }}</td>
-      <td>
-        {% if p.era_val <= 3.00 %}
-          <span class="stat-good">{{ p.era }}</span>
-        {% elif p.era_val >= 5.00 %}
-          <span class="stat-bad">{{ p.era }}</span>
-        {% else %}
-          {{ p.era }}
-        {% endif %}
-      </td>
-      <td>
-        {% if p.whip_val <= 1.20 %}
-          <span class="stat-good">{{ p.whip }}</span>
-        {% elif p.whip_val >= 1.60 %}
-          <span class="stat-bad">{{ p.whip }}</span>
-        {% elif p.whip_val >= 1.40 %}
-          <span class="stat-warn">{{ p.whip }}</span>
-        {% else %}
-          {{ p.whip }}
-        {% endif %}
-      </td>
-      <td>{{ p.kbb }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-{# ── Rolling 10-game table ────────────────────────────────────────────── #}
-<h5 class="section-title mt-4">Last 10 Games — Pitching</h5>
-{% if not rolling %}
-  <p class="text-secondary" style="font-size:0.82rem;">Not enough games yet.</p>
-{% else %}
-<p class="text-secondary" style="font-size:0.82rem;">
-  Stats from the most recent 10 team games. Sorted by IP.
-</p>
-<div class="table-scroll">
-<table class="table table-sm table-bordered table-hover table-rangers align-middle" id="rollingTable">
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th class="sortable" data-col="1" title="Games">G</th>
-      <th class="sortable" data-col="2" title="Innings Pitched">IP</th>
-      <th class="sortable" data-col="3" title="Hits Allowed">H</th>
-      <th class="sortable" data-col="4" title="Earned Runs">ER</th>
-      <th class="sortable" data-col="5" title="Walks">BB</th>
-      <th class="sortable" data-col="6" title="Strikeouts">SO</th>
-      <th class="sortable" data-col="7" title="Earned Run Average">ERA</th>
-      <th class="sortable" data-col="8" title="Walks + Hits per Inning">WHIP</th>
-      <th class="sortable" data-col="9" title="Strikeout-to-Walk Ratio">K/BB</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for p in rolling %}
-    <tr>
-      <td><a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a></td>
-      <td>{{ p.g }}</td>
+      <td>{{ p.outs }}</td>
       <td>{{ p.ip }}</td>
       <td>{{ p.h }}</td>
       <td>{{ p.er }}</td>
@@ -130,6 +63,73 @@
           {{ p.whip }}
         {% endif %}
       </td>
+      <td>{{ p.fip_est if p.fip_est is not none else '-' }}</td>
+      <td>{{ p.kbb }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{# ── Rolling 10-game table ────────────────────────────────────────────── #}
+<h5 class="section-title mt-4">Last 10 Games — Pitching</h5>
+{% if not rolling %}
+  <p class="text-secondary" style="font-size:0.82rem;">Not enough games yet.</p>
+{% else %}
+<p class="text-secondary" style="font-size:0.82rem;">
+  Stats from the most recent 10 team games. Sorted by IP.
+</p>
+<div class="table-scroll">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle" id="rollingTable">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th class="sortable" data-col="1" title="Games">G</th>
+      <th class="sortable" data-col="2" title="Outs Pitched">OUTS</th>
+      <th class="sortable" data-col="3" title="Innings Pitched">IP</th>
+      <th class="sortable" data-col="4" title="Hits Allowed">H</th>
+      <th class="sortable" data-col="5" title="Earned Runs">ER</th>
+      <th class="sortable" data-col="6" title="Walks">BB</th>
+      <th class="sortable" data-col="7" title="Strikeouts">SO</th>
+      <th class="sortable" data-col="8" title="Earned Run Average">ERA</th>
+      <th class="sortable" data-col="9" title="Walks + Hits per Inning">WHIP</th>
+      <th class="sortable" data-col="10" title="Fielding Independent Pitching (est)">FIP*</th>
+      <th class="sortable" data-col="11" title="Strikeout-to-Walk Ratio">K/BB</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in rolling %}
+    <tr>
+      <td><a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a></td>
+      <td>{{ p.g }}</td>
+      <td>{{ p.outs }}</td>
+      <td>{{ p.ip }}</td>
+      <td>{{ p.h }}</td>
+      <td>{{ p.er }}</td>
+      <td>{{ p.bb }}</td>
+      <td>{{ p.so }}</td>
+      <td>
+        {% if p.era_val <= 3.00 %}
+          <span class="stat-good">{{ p.era }}</span>
+        {% elif p.era_val >= 5.00 %}
+          <span class="stat-bad">{{ p.era }}</span>
+        {% elif p.era_val >= 4.00 %}
+          <span class="stat-warn">{{ p.era }}</span>
+        {% else %}
+          {{ p.era }}
+        {% endif %}
+      </td>
+      <td>
+        {% if p.whip_val <= 1.20 %}
+          <span class="stat-good">{{ p.whip }}</span>
+        {% elif p.whip_val >= 1.60 %}
+          <span class="stat-bad">{{ p.whip }}</span>
+        {% elif p.whip_val >= 1.40 %}
+          <span class="stat-warn">{{ p.whip }}</span>
+        {% else %}
+          {{ p.whip }}
+        {% endif %}
+      </td>
+      <td>{{ p.fip_est if p.fip_est is not none else '-' }}</td>
       <td>{{ p.kbb }}</td>
     </tr>
     {% endfor %}

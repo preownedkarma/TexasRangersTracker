@@ -22,13 +22,15 @@
       <th class="sortable" data-col="0">Player</th>
       <th class="sortable" data-col="1">G</th>
       <th class="sortable" data-col="2">AB</th>
-      <th class="sortable" data-col="3">H</th>
-      <th class="sortable" data-col="4">HR</th>
-      <th class="sortable" data-col="5">RBI</th>
-      <th class="sortable" data-col="6">BB</th>
-      <th class="sortable" data-col="7">SO</th>
-      <th class="sortable" data-col="8">AVG</th>
-      <th class="sortable" data-col="9">OBP</th>
+      <th class="sortable" data-col="3">PA</th>
+      <th class="sortable" data-col="4">H</th>
+      <th class="sortable" data-col="5">HR</th>
+      <th class="sortable" data-col="6">RBI</th>
+      <th class="sortable" data-col="7">BB</th>
+      <th class="sortable" data-col="8">SO</th>
+      <th class="sortable" data-col="9">AVG</th>
+      <th class="sortable" data-col="10">OBP</th>
+      <th class="sortable" data-col="11">ISO</th>
     </tr>
   </thead>
   <tbody>
@@ -39,6 +41,7 @@
       <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
       <td>{{ b.g }}</td>
       <td>{{ b.ab }}</td>
+      <td>{{ b.pa }}</td>
       <td>{{ b.h }}</td>
       <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
       <td>{{ b.rbi }}</td>
@@ -50,6 +53,7 @@
       <td class="{% if obp_f >= 0.360 %}stat-good{% elif obp_f < 0.280 and b.ab >= 10 %}stat-bad{% endif %}">
         {{ b.obp }}
       </td>
+      <td class="{% if b.iso_val >= 0.200 %}stat-good{% elif b.iso_val < 0.100 and b.ab >= 10 %}stat-bad{% endif %}">{{ b.iso }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -62,7 +66,7 @@
 </p>
 
 {# ── Rolling 10-game table ────────────────────────────────────────────── #}
-<h5 class="section-title mt-4">Last 10 Games — Batting</h5>
+<h5 class="section-title mt-4">Last 10 Games - Batting</h5>
 {% if not rolling %}
   <p class="text-secondary" style="font-size:0.82rem;">Not enough games yet.</p>
 {% else %}
@@ -76,13 +80,15 @@
       <th class="sortable" data-col="0">Player</th>
       <th class="sortable" data-col="1">G</th>
       <th class="sortable" data-col="2">AB</th>
-      <th class="sortable" data-col="3">H</th>
-      <th class="sortable" data-col="4">HR</th>
-      <th class="sortable" data-col="5">RBI</th>
-      <th class="sortable" data-col="6">BB</th>
-      <th class="sortable" data-col="7">SO</th>
-      <th class="sortable" data-col="8">AVG</th>
-      <th class="sortable" data-col="9">OBP</th>
+      <th class="sortable" data-col="3">PA</th>
+      <th class="sortable" data-col="4">H</th>
+      <th class="sortable" data-col="5">HR</th>
+      <th class="sortable" data-col="6">RBI</th>
+      <th class="sortable" data-col="7">BB</th>
+      <th class="sortable" data-col="8">SO</th>
+      <th class="sortable" data-col="9">AVG</th>
+      <th class="sortable" data-col="10">OBP</th>
+      <th class="sortable" data-col="11">ISO</th>
     </tr>
   </thead>
   <tbody>
@@ -93,6 +99,7 @@
       <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
       <td>{{ b.g }}</td>
       <td>{{ b.ab }}</td>
+      <td>{{ b.pa }}</td>
       <td>{{ b.h }}</td>
       <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
       <td>{{ b.rbi }}</td>
@@ -104,6 +111,7 @@
       <td class="{% if obp_f >= 0.360 %}stat-good{% elif obp_f < 0.280 and b.ab >= 5 %}stat-bad{% endif %}">
         {{ b.obp }}
       </td>
+      <td class="{% if b.iso_val >= 0.200 %}stat-good{% elif b.iso_val < 0.100 and b.ab >= 5 %}stat-bad{% endif %}">{{ b.iso }}</td>
     </tr>
     {% endfor %}
   </tbody>

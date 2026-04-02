@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Season Trends{% endblock %}
+
+{% block content %}
+<h3>Season Trends</h3>
+<p>Rolling window: <strong>{{ trend_window }} games</strong></p>
+<nav class="mb-3">
+  <a class="btn btn-sm btn-outline-secondary" href="?n=7">7</a>
+  <a class="btn btn-sm btn-outline-secondary" href="?n=10">10</a>
+  <a class="btn btn-sm btn-outline-secondary" href="?n=14">14</a>
+  <a class="btn btn-sm btn-outline-secondary" href="?n=30">30</a>
+</nav>
+
+{% if runs_data|length == 0 or era_data|length == 0 or top5|length == 0 %}
+  <div class="alert alert-warning">Not enough data to build trends yet. Run sync and add more games.</div>
+{% else %}
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card bg-dark border-secondary p-3 mb-3">
+      <h5>Runs Scored Per Game</h5>
+      <canvas id="runsChart" height="120"></canvas>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card bg-dark border-secondary p-3 mb-3">
+      <h5>Team ERA Per Game</h5>
+      <canvas id="eraChart" height="120"></canvas>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card bg-dark border-secondary p-3 mb-3">
+      <h5>Top 5 Players by Rolling AVG Delta (vs season)</h5>
+      <canvas id="top5Chart" height="120"></canvas>
+      <p class="text-muted mt-2">Positive delta means player is outperforming season average in last {{ trend_window }} games.</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<h5>Bottom 5 (Cold) Players</h5>
+{% if bottom5|length == 0 %}
+  <div class="text-secondary">Not enough player data to determine bottom 5 yet.</div>
+{% else %}
+<table class="table table-sm table-bordered table-rangers">
+  <thead><tr><th>Player</th><th>Rolling AVG</th><th>Season AVG</th><th>Delta</th></tr></thead>
+  <tbody>
+  {% for p in bottom5 %}
+  <tr>
+    <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+    <td>{{ "%.3f"|format(p.rolling_avg) }}</td>
+    <td>{{ "%.3f"|format(p.season_avg) }}</td>
+    <td class="{{ 'stat-good' if p.delta > 0 else 'stat-bad' if p.delta < 0 else ''}}">{{ "%+.3f"|format(p.delta) }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof Chart === 'undefined') {
+    console.error('Chart.js not loaded');
+    return;
+  }
+
+  const runsData = {{ runs_data|tojson }};
+  const eraData = {{ era_data|tojson }};
+  const trendWindow = {{ trend_window }};
+  const top5Data = {{ top5|tojson }};
+
+  const runsLabels = runsData.map(x => x.date);
+  const runsValues = runsData.map(x => x.value);
+  const runsRolling = runsData.map(x => x.rolling);
+
+  const eraLabels = eraData.map(x => x.date);
+  const eraValues = eraData.map(x => x.value !== null ? x.value : null);
+  const eraRolling = eraData.map(x => x.rolling !== null ? x.rolling : null);
+
+  const top5Labels = top5Data.map(x => x.player_name);
+  const top5Values = top5Data.map(x => x.delta);
+
+  if (runsData.length && eraData.length && top5Data.length) {
+    new Chart(document.getElementById('runsChart'), {
+      type: 'line',
+      data: {
+        labels: runsLabels,
+        datasets: [
+          { label: 'Runs/G', data: runsValues, borderColor: '#28a745', backgroundColor: 'rgba(40,167,69,0.2)', tension: 0.2 },
+          { label: `Rolling ${trendWindow}`, data: runsRolling, borderColor: '#17a2b8', backgroundColor: 'rgba(23,162,184,0.2)', tension: 0.2 },
+        ]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+    new Chart(document.getElementById('eraChart'), {
+      type: 'line',
+      data: {
+        labels: eraLabels,
+        datasets: [
+          { label: 'ERA', data: eraValues, borderColor: '#ffc107', backgroundColor: 'rgba(255,193,7,0.2)', tension: 0.2 },
+          { label: `Rolling ${trendWindow}`, data: eraRolling, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.2)', tension: 0.2 },
+        ]
+      },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+    new Chart(document.getElementById('top5Chart'), {
+      type: 'bar',
+      data: {
+        labels: top5Labels,
+        datasets: [{
+          label: 'Rolling Delta',
+          data: top5Values,
+          backgroundColor: top5Values.map(v => v >= 0 ? 'rgba(40,167,69,0.7)' : 'rgba(220,53,69,0.7)'),
+          borderColor: top5Values.map(v => v >= 0 ? 'rgba(40,167,69,1)' : 'rgba(220,53,69,1)'),
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+          }
+        }
+      }
+    });
+  }
+});
+</script>
+{% endblock %}

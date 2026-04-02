@@ -19,14 +19,23 @@ A Flask web application for tracking the 2026 Texas Rangers season. Game data is
 - Team ranking among all 30 MLB teams for AVG, OBP, RBI, ERA, WHIP, and ER
 
 **Batting Leaderboard**
-- Full season stats: G, AB, H, HR, RBI, BB, SO, AVG, OBP
-- Last 10 games rolling stats
+- Full season stats: G, AB, H, HR, RBI, BB, SO, PA, AVG, OBP, ISO
+- Last 10 games rolling stats with ISO calculations
 - Sortable columns, pitchers excluded
+- Advanced metrics including Plate Appearances (PA) and Isolated Power (ISO)
 
 **Pitching Leaderboard**
-- Full season stats: G, IP, H, ER, BB, SO, ERA, WHIP, K/BB
+- Full season stats: G, IP, H, ER, BB, SO, ERA, WHIP, K/BB, FIP
 - Last 10 games rolling stats
 - Sortable columns
+- Advanced metrics including Field Independent Pitching (FIP)
+
+**Season Trends**
+- Runs scored per game with rolling averages (7/10/14/30 game windows)
+- Team ERA per game with rolling averages
+- Top 5 players by rolling AVG delta vs season average
+- Interactive charts using Chart.js
+- Configurable rolling windows for trend analysis
 
 **Player Pages**
 - Season totals bar
@@ -43,11 +52,25 @@ A Flask web application for tracking the 2026 Texas Rangers season. Game data is
 - Python 3.9+
 - Flask
 - Requests
+- Chart.js (loaded via CDN)
 
 Install dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+## Running the App
+
+```bash
+python app.py
+```
+
+The app will be available at http://localhost:5000
+
+## Data Source
+
+All game data comes from the official MLB Stats API. The app syncs completed games and stores them locally in SQLite for fast access and analysis.
 ```
 
 ---

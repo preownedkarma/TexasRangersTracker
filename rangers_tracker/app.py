@@ -342,7 +342,8 @@ def get_season_batting():
             SUM(hr)  AS hr,
             SUM(rbi) AS rbi,
             SUM(bb)  AS bb,
-            SUM(so)  AS so
+            SUM(so)  AS so,
+            SUM(ab + bb) AS pa
         FROM batter_lines
         WHERE player_id NOT IN (SELECT DISTINCT player_id FROM pitcher_lines)
         GROUP BY player_id
@@ -358,6 +359,9 @@ def get_season_batting():
         bb  = r["bb"]
         avg = safe_avg(h, ab)
         obp = safe_avg(h + bb, ab + bb)
+        pa = r["pa"] if r["pa"] is not None else 0
+        iso = round((h - r["hr"]) / ab, 3) if ab > 0 else 0.0
+
         result.append({
             "player_id":   r["player_id"],
             "player_name": r["player_name"],
@@ -368,6 +372,9 @@ def get_season_batting():
             "rbi": r["rbi"],
             "bb":  bb,
             "so":  r["so"],
+            "pa":  pa,
+            "iso": fmt_avg(iso),
+            "iso_val": iso,
             "avg": fmt_avg(avg),
             "obp": fmt_avg(obp),
             "avg_val": avg,   # raw float for color-coding
@@ -424,6 +431,7 @@ def get_rolling_batting(n=10):
         bb  = r["bb"]
         avg = safe_avg(h, ab)
         obp = safe_avg(h + bb, ab + bb)
+        iso = round((h - r["hr"]) / ab, 3) if ab > 0 else 0.0
         result.append({
             "player_id":   r["player_id"],
             "player_name": r["player_name"],
@@ -434,6 +442,8 @@ def get_rolling_batting(n=10):
             "rbi": r["rbi"],
             "bb":  bb,
             "so":  r["so"],
+            "iso": fmt_avg(iso),
+            "iso_val": iso,
             "avg": fmt_avg(avg),
             "obp": fmt_avg(obp),
             "avg_val": avg,
@@ -485,6 +495,9 @@ def get_rolling_pitching(n=10):
         era  = era_str(r["er"], outs)
         whip = whip_str(r["h"], r["bb"], outs)
         kbb  = kbb_str(r["so"], r["bb"])
+        fip_est = None
+        if outs > 0:
+            fip_est = round((3 * r["bb"] - 2 * r["so"]) / (outs / 3) + 3.1, 2)
         result.append({
             "player_id":   r["player_id"],
             "player_name": r["player_name"],
@@ -498,6 +511,7 @@ def get_rolling_pitching(n=10):
             "era":  era,
             "whip": whip,
             "kbb":  kbb,
+            "fip_est": fip_est,
             "era_val":  float(era)  if era  != "-.--" else 99.0,
             "whip_val": float(whip) if whip != "-.--" else 99.0,
         })
@@ -535,6 +549,9 @@ def get_season_pitching():
         era  = era_str(r["er"], outs)
         whip = whip_str(r["h"], r["bb"], outs)
         kbb  = kbb_str(r["so"], r["bb"])
+        fip_est = None
+        if outs > 0:
+            fip_est = round((3 * r["bb"] - 2 * r["so"]) / (outs / 3) + 3.1, 2)
         result.append({
             "player_id":   r["player_id"],
             "player_name": r["player_name"],
@@ -548,7 +565,7 @@ def get_season_pitching():
             "era":  era,
             "whip": whip,
             "kbb":  kbb,
-            # raw floats for color-coding
+            "fip_est": fip_est,
             "era_val":  float(era)  if era  != "-.--" else 99.0,
             "whip_val": float(whip) if whip != "-.--" else 99.0,
         })
@@ -1081,17 +1098,88 @@ def season():
 @app.route("/season/batting")
 def season_batting():
     db.init_db()
+    n = request.args.get("n", default=10, type=int)
+    if n not in (7, 10, 14, 30):
+        n = 10
     batters  = get_season_batting()
-    rolling  = get_rolling_batting(10)
-    return render_template("batting.html", batters=batters, rolling=rolling)
+    rolling  = get_rolling_batting(n)
+    return render_template("batting.html", batters=batters, rolling=rolling, rolling_window=n)
 
 
 @app.route("/season/pitching")
 def season_pitching():
     db.init_db()
+    n = request.args.get("n", default=10, type=int)
+    if n not in (7, 10, 14, 30):
+        n = 10
     pitchers = get_season_pitching()
-    rolling  = get_rolling_pitching(10)
-    return render_template("pitching.html", pitchers=pitchers, rolling=rolling)
+    rolling  = get_rolling_pitching(n)
+    return render_template("pitching.html", pitchers=pitchers, rolling=rolling, rolling_window=n)
+
+
+@app.route("/season/trends")
+def season_trends():
+    db.init_db()
+    n = request.args.get("n", default=10, type=int)
+    if n not in (7, 10, 14, 30):
+        n = 10
+
+    games = get_all_games()
+    runs_data = []
+    era_data = []
+
+    for g in games:
+        g_runs = parse_runs_scored(g.get("score", "0-0"))
+        pitchers = get_pitcher_lines_for_game(g["game_pk"])
+        g_outs = sum(ip_to_outs(p["ip_str"]) for p in pitchers)
+        g_er = sum(p["er"] for p in pitchers)
+        g_era_val = round((g_er * 9) / (g_outs / 3), 2) if g_outs > 0 else None
+
+        runs_data.append({"date": g["date"], "value": g_runs})
+        era_data.append({"date": g["date"], "value": g_era_val, "outs": g_outs, "er": g_er})
+
+    for i in range(len(runs_data)):
+        window = runs_data[max(0, i - (n - 1)): i + 1]
+        run_rel = sum(x["value"] for x in window) / len(window) if window else 0
+        runs_data[i]["rolling"] = round(run_rel, 3)
+
+    for i in range(len(era_data)):
+        window = era_data[max(0, i - (n - 1)): i + 1]
+        w_outs = sum(x["outs"] for x in window)
+        w_er = sum(x["er"] for x in window)
+        era_val = round((w_er * 9) / (w_outs / 3), 2) if w_outs > 0 else None
+        era_data[i]["rolling"] = era_val
+
+    hundred = 100
+    rolling_bat = get_rolling_batting(n)
+    season_bat = get_season_batting()
+    season_map = {x["player_id"]: x for x in season_bat}
+    adv = []
+    for p in rolling_bat:
+        season_profile = season_map.get(p["player_id"])
+        if not season_profile:
+            continue
+        delta = round(p["avg_val"] - season_profile.get("avg_val", 0), 3)
+        adv.append({
+            "player_id": p["player_id"],
+            "player_name": p["player_name"],
+            "rolling_avg": p["avg_val"],
+            "season_avg": season_profile.get("avg_val", 0),
+            "delta": delta,
+        })
+
+    adv.sort(key=lambda x: x["delta"], reverse=True)
+    top5 = adv[:5]
+    bottom5 = sorted(adv, key=lambda x: x["delta"])[:5]
+
+    return render_template(
+        "season_trends.html",
+        runs_data=runs_data,
+        era_data=era_data,
+        top5=top5,
+        bottom5=bottom5,
+        trend_window=n,
+    )
 
 
 @app.route("/player/<int:player_id>")

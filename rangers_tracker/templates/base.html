@@ -11,7 +11,7 @@
         crossorigin="anonymous">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"
-          crossorigin="anonymous" defer></script>
+          crossorigin="anonymous"></script>
   <!-- Custom styles -->
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block head_extra %}{% endblock %}
@@ -43,6 +43,10 @@
         <li class="nav-item">
           <a class="nav-link {% if request.path == '/season/pitching' %}active{% endif %}"
              href="/season/pitching">Pitching</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path == '/season/trends' %}active{% endif %}"
+             href="/season/trends">Trends</a>
         </li>
       </ul>
       <span class="navbar-text text-secondary me-3" style="font-size:0.78rem;">
