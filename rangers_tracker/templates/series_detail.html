@@ -47,6 +47,7 @@
       <th title="WHIP">WHIP</th>
       <th title="K/BB">K/BB</th>
       <th title="Quality Start">QS</th>
+      <th title="Weather at game time">Weather</th>
     </tr>
   </thead>
   <tbody>
@@ -66,8 +67,16 @@
       <td>{{ g.score }}</td>
       <td style="font-size:0.78rem; color:#8899bb;">
         {{ g.venue }}
-        {% if g.roof and g.roof != 'Open Air' %}
-          <br><span style="font-size:0.7rem;">({{ g.roof }})</span>
+        {% if g.roof_status and g.roof_status != 'Open Air' %}
+          {% if g.roof_status == 'Closed' %}
+            <br><span style="font-size:0.7rem; color:#adb5bd;">&#x1F3DB; Roof Closed</span>
+          {% elif g.roof_status == 'Open' %}
+            <br><span style="font-size:0.7rem; color:#adb5bd;">&#x2600;&#xFE0F; Roof Open</span>
+          {% elif g.roof_status == 'Unknown' %}
+            <br><span style="font-size:0.7rem; color:#6c757d;">Retractable (status unknown)</span>
+          {% endif %}
+        {% elif g.roof and g.roof != 'Open Air' and not g.roof_status %}
+          <br><span style="font-size:0.7rem; color:#6c757d;">({{ g.roof }})</span>
         {% endif %}
       </td>
       {# Hitting cols #}
@@ -91,6 +100,16 @@
       </td>
       <td>{{ g.g_kbb }}</td>
       <td class="{% if g.g_qs == 'YES' %}qs-yes{% else %}qs-no{% endif %}">{{ g.g_qs }}</td>
+      <td style="font-size:0.75rem; color:#8899bb; white-space:nowrap;">
+        {% if g.roof_status == 'Closed' %}
+          <span title="Indoor — no weather">&#x1F3DB; Indoor</span>
+        {% elif g.weather_condition %}
+          {{ g.weather_condition }}{% if g.weather_temp %}, {{ g.weather_temp }}&deg;F{% endif %}
+          {% if g.weather_wind %}<br><span style="color:#6c757d;">{{ g.weather_wind }}</span>{% endif %}
+        {% else %}
+          <span class="text-secondary">—</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -204,7 +223,11 @@
         <div class="mt-2" style="font-size:0.78rem; color:#8899bb;">
           {% if g.venue %}
             <strong>Venue:</strong> {{ g.venue }}
-            {% if g.roof %} ({{ g.roof }}){% endif %}
+            {% if g.roof_status == 'Closed' %}(Roof Closed)
+            {% elif g.roof_status == 'Open' %}(Roof Open)
+            {% elif g.roof_status == 'Unknown' %}(Retractable — status unknown)
+            {% elif g.roof and g.roof != 'Open Air' %}({{ g.roof }})
+            {% endif %}
             &mdash;
             {{ g.day_night }} Game
             {% if g.game_time %} &mdash; {{ g.game_time }}{% endif %}
@@ -351,6 +374,7 @@
           <th>H/A</th>
           <th>TEX Starter</th>
           <th>Opp Starter</th>
+          <th title="Forecast weather at game time">Forecast</th>
         </tr>
       </thead>
       <tbody>
@@ -371,6 +395,19 @@
               {{ g.opp_starter }}
             {% else %}
               <span class="text-secondary">TBD</span>
+            {% endif %}
+          </td>
+          <td style="font-size:0.78rem; color:#8899bb; white-space:nowrap;">
+            {% if g.forecast %}
+              {{ g.forecast.condition }}, {{ g.forecast.temp_f }}&deg;F
+              <br><span style="color:#6c757d;">
+                Wind {{ g.forecast.wind_mph }} mph
+                {% if g.forecast.precip_pct is not none %}
+                  &mdash; {{ g.forecast.precip_pct }}% precip
+                {% endif %}
+              </span>
+            {% else %}
+              <span class="text-secondary">N/A</span>
             {% endif %}
           </td>
         </tr>

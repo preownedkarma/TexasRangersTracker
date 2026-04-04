@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Game Archive{% endblock %}
+
+{% block head_extra %}
+<style>
+  #archiveTable td, #archiveTable th { white-space: nowrap; }
+  .filter-bar { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+  .filter-bar select, .filter-bar input { background: #0d1f3c; color: #cdd9f0; border: 1px solid #1e3a6e; border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 0.82rem; }
+  .filter-bar label { font-size: 0.78rem; color: #8899bb; margin-right: -0.4rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h3>Game Archive</h3>
+<p class="text-secondary" style="font-size:0.85rem;">{{ games|length }} game{{ 's' if games|length != 1 }} logged &mdash; click any row to view box score</p>
+
+{% if games|length == 0 %}
+  <div class="alert alert-warning">No games synced yet. Run sync to populate.</div>
+{% else %}
+
+{# ── Filter bar ── #}
+<div class="filter-bar">
+  <label for="fResult">Result</label>
+  <select id="fResult" onchange="applyFilters()">
+    <option value="">All</option>
+    <option value="W">Wins</option>
+    <option value="L">Losses</option>
+  </select>
+
+  <label for="fHA">Home/Away</label>
+  <select id="fHA" onchange="applyFilters()">
+    <option value="">All</option>
+    <option value="home">Home</option>
+    <option value="away">Away</option>
+  </select>
+
+  <label for="fMonth">Month</label>
+  <select id="fMonth" onchange="applyFilters()">
+    <option value="">All</option>
+    {% set seen_months = namespace(v=[]) %}
+    {% for g in games %}
+      {% set mo = g.date[:7] %}
+      {% if mo not in seen_months.v %}
+        {% set _ = seen_months.v.append(mo) %}
+        <option value="{{ mo }}">{{ mo }}</option>
+      {% endif %}
+    {% endfor %}
+  </select>
+
+  <label for="fSearch">Search</label>
+  <input id="fSearch" type="text" placeholder="opponent / venue…" oninput="applyFilters()" style="min-width:160px;">
+
+  <span id="matchCount" class="text-secondary" style="font-size:0.78rem; margin-left:auto;"></span>
+</div>
+
+{# ── Archive table ── #}
+<div class="table-responsive">
+<table class="table table-sm table-bordered table-hover table-rangers align-middle" id="archiveTable">
+  <thead class="sticky-top" style="top:0;">
+    <tr>
+      <th title="Game number">GP</th>
+      <th>Date</th>
+      <th>H/A</th>
+      <th>Opponent</th>
+      <th>Res</th>
+      <th>Score</th>
+      {# Batting #}
+      <th title="At-Bats">AB</th>
+      <th title="Hits">H</th>
+      <th title="Home Runs">HR</th>
+      <th title="RBI">RBI</th>
+      <th title="Walks">BB</th>
+      <th title="Strikeouts">SO</th>
+      <th title="Team Batting Average">AVG</th>
+      {# Pitching #}
+      <th title="Innings Pitched">IP</th>
+      <th title="Earned Runs">ER</th>
+      <th title="Team ERA">ERA</th>
+      <th title="WHIP">WHIP</th>
+      <th title="Pitcher Strikeouts">K</th>
+      {# Context #}
+      <th>Venue</th>
+      <th title="Roof / Weather">Conditions</th>
+    </tr>
+  </thead>
+  <tbody id="archiveBody">
+  {% for g in games %}
+  {% set avg_f   = g.t_avg | float %}
+  {% set era_f   = g.t_era | float if g.t_era != '-.--' else 0 %}
+  {% set whip_f  = g.t_whip | float if g.t_whip != '-.--' else 0 %}
+  <tr class="archive-row"
+      data-result="{{ g.result }}"
+      data-ha="{{ g.rangers_side }}"
+      data-month="{{ g.date[:7] }}"
+      data-search="{{ g.opponent|lower }} {{ (g.venue or '')|lower }}"
+      onclick="window.location='/game/{{ g.game_pk }}'"
+      style="cursor:pointer;">
+    <td class="text-secondary" style="font-size:0.75rem;">{{ g.gp }}</td>
+    <td style="font-size:0.82rem;">{{ g.date }}</td>
+    <td>{{ 'Home' if g.rangers_side == 'home' else 'Away' }}</td>
+    <td>{{ g.opponent }}</td>
+    <td>
+      {% if g.result == 'W' %}
+        <span class="result-w">W</span>
+      {% else %}
+        <span class="result-l">L</span>
+      {% endif %}
+    </td>
+    <td>{{ g.score }}</td>
+    {# Batting #}
+    <td>{{ g.t_ab }}</td>
+    <td>{{ g.t_h }}</td>
+    <td>{% if g.t_hr > 0 %}<span class="stat-warn">{{ g.t_hr }}</span>{% else %}0{% endif %}</td>
+    <td>{{ g.t_rbi }}</td>
+    <td>{{ g.t_bb }}</td>
+    <td>{{ g.t_so }}</td>
+    <td class="{% if avg_f >= 0.300 %}stat-good{% elif avg_f < 0.200 %}stat-bad{% endif %}">
+      {{ g.t_avg }}
+    </td>
+    {# Pitching #}
+    <td>{{ g.t_ip }}</td>
+    <td>{% if g.t_er >= 5 %}<span class="stat-bad">{{ g.t_er }}</span>{% else %}{{ g.t_er }}{% endif %}</td>
+    <td class="{% if era_f > 0 and era_f <= 3.00 %}stat-good{% elif era_f >= 5.50 %}stat-bad{% elif era_f >= 4.50 %}stat-warn{% endif %}">
+      {{ g.t_era }}
+    </td>
+    <td class="{% if whip_f > 0 and whip_f <= 1.20 %}stat-good{% elif whip_f >= 1.60 %}stat-bad{% elif whip_f >= 1.40 %}stat-warn{% endif %}">
+      {{ g.t_whip }}
+    </td>
+    <td>{{ g.t_pso }}</td>
+    {# Context #}
+    <td style="font-size:0.75rem; color:#8899bb;">{{ g.venue or '—' }}</td>
+    <td style="font-size:0.75rem; color:#8899bb; white-space:normal; min-width:110px;">
+      {% if g.roof_status == 'Closed' %}
+        &#x1F3DB; Indoor
+      {% elif g.weather_condition %}
+        {{ g.weather_condition }}{% if g.weather_temp %}, {{ g.weather_temp }}&deg;{% endif %}
+      {% else %}
+        —
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function applyFilters() {
+  const result = document.getElementById('fResult').value;
+  const ha     = document.getElementById('fHA').value;
+  const month  = document.getElementById('fMonth').value;
+  const search = document.getElementById('fSearch').value.toLowerCase().trim();
+  const rows   = document.querySelectorAll('.archive-row');
+  let visible  = 0;
+
+  rows.forEach(row => {
+    const show = (
+      (!result || row.dataset.result === result) &&
+      (!ha     || row.dataset.ha     === ha)     &&
+      (!month  || row.dataset.month  === month)  &&
+      (!search || row.dataset.search.includes(search))
+    );
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  const el = document.getElementById('matchCount');
+  if (el) el.textContent = visible + ' game' + (visible !== 1 ? 's' : '') + ' shown';
+}
+
+// Initialise count on load
+document.addEventListener('DOMContentLoaded', () => applyFilters());
+</script>
+{% endblock %}

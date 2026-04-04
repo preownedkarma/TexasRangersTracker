@@ -180,6 +180,47 @@
 
 </div>{# /row #}
 
+{# ── Player Leaderboards ─────────────────────────────────────────────────── #}
+{% macro lb_card(title, players, stat_attr, stat_fmt='') %}
+<div class="card bg-dark border-secondary p-2" style="min-width:170px; flex:1 1 170px;">
+  <div style="font-size:0.72rem; color:#8899bb; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.4rem;">{{ title }}</div>
+  {% if players|length == 0 %}
+    <div class="text-secondary" style="font-size:0.8rem;">No data</div>
+  {% else %}
+  <table class="table table-sm table-rangers mb-0" style="font-size:0.82rem;">
+    <tbody>
+      {% for p in players %}
+      <tr>
+        <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+        <td class="text-end fw-bold">{{ p[stat_attr] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<h5 class="section-title mt-2">Batting Leaders</h5>
+<div class="d-flex gap-3 flex-wrap mb-4">
+  {{ lb_card("Hits",        overview.top_h,   "h")       }}
+  {{ lb_card("Batting AVG", overview.top_avg, "avg")     }}
+  {{ lb_card("Home Runs",   overview.top_hr,  "hr")      }}
+</div>
+
+<h5 class="section-title">Starting Pitcher Leaders</h5>
+<div class="d-flex gap-3 flex-wrap mb-4">
+  {{ lb_card("ERA",         overview.top_sp_era,  "era")  }}
+  {{ lb_card("Strikeouts",  overview.top_sp_k,    "so")   }}
+  {{ lb_card("WHIP",        overview.top_sp_whip, "whip") }}
+</div>
+
+<h5 class="section-title">Relief Pitcher Leaders</h5>
+<div class="d-flex gap-3 flex-wrap mb-4">
+  {{ lb_card("Saves", overview.top_rp_sv,  "saves") }}
+  {{ lb_card("Holds", overview.top_rp_hld, "holds") }}
+</div>
+
 {# ── Team Rankings ───────────────────────────────────────────────────────── #}
 {% if overview.ranks %}
 {% macro rank_tile(label, stat, lower_is_better=false) %}
@@ -206,6 +247,8 @@
       {{ rank_tile("Team AVG",  overview.ranks.avg) }}
       {{ rank_tile("Team OBP",  overview.ranks.obp) }}
       {{ rank_tile("Team RBI",  overview.ranks.rbi) }}
+      {{ rank_tile("Team Hits", overview.ranks.hits) }}
+      {{ rank_tile("Team BB",   overview.ranks.bb) }}
     </div>
   </div>
   <div class="col-12 col-lg-6">
@@ -214,6 +257,8 @@
       {{ rank_tile("Team ERA",  overview.ranks.era,  lower_is_better=true) }}
       {{ rank_tile("Team WHIP", overview.ranks.whip, lower_is_better=true) }}
       {{ rank_tile("Team ER",   overview.ranks.er,   lower_is_better=true) }}
+      {{ rank_tile("Team K's",  overview.ranks.k) }}
+      {{ rank_tile("Team BB",   overview.ranks.pbb,  lower_is_better=true) }}
     </div>
   </div>
 </div>

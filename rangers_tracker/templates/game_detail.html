@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% set g = box.game %}
+{% block title %}{{ g.date }} vs {{ g.opponent }}{% endblock %}
+
+{% block content %}
+
+{# ── Back link ── #}
+<a href="/games" class="btn btn-sm btn-outline-secondary mb-3">&larr; Game Archive</a>
+
+{# ── Game header ── #}
+<div class="card bg-dark border-secondary p-3 mb-4">
+  <div class="d-flex flex-wrap align-items-center gap-3">
+    <div>
+      <div style="font-size:0.72rem; color:#8899bb; text-transform:uppercase; letter-spacing:0.08em;">
+        Game &mdash; {{ g.date }}
+      </div>
+      <div style="font-size:1.4rem; font-weight:700; color:#cdd9f0;">
+        TEX vs {{ g.opponent }}
+      </div>
+      <div style="font-size:0.9rem; color:#8899bb;">
+        {{ 'Home' if g.rangers_side == 'home' else 'Away' }}
+        {% if g.game_time %}&mdash; {{ g.game_time }}{% endif %}
+        {% if g.day_night %}&mdash; {{ g.day_night }} Game{% endif %}
+      </div>
+    </div>
+
+    <div class="ms-auto text-end">
+      {% if g.result == 'W' %}
+        <span class="result-w" style="font-size:2rem;">W</span>
+      {% else %}
+        <span class="result-l" style="font-size:2rem;">L</span>
+      {% endif %}
+      <div style="font-size:1.1rem; color:#cdd9f0; font-weight:600;">{{ g.score }}</div>
+    </div>
+  </div>
+
+  <hr style="border-color:#1e3a6e; margin: 0.6rem 0;">
+
+  <div style="font-size:0.8rem; color:#8899bb;" class="d-flex flex-wrap gap-3">
+    {% if g.venue %}
+    <span><strong style="color:#aab4d0;">Venue:</strong> {{ g.venue }}
+      {% if g.roof_status == 'Closed' %}&#x1F3DB; Roof Closed
+      {% elif g.roof_status == 'Open' %}&#x2600;&#xFE0F; Roof Open
+      {% elif g.roof and g.roof != 'Open Air' %}({{ g.roof }})
+      {% endif %}
+    </span>
+    {% endif %}
+    {% if g.weather_condition and g.roof_status != 'Closed' %}
+    <span><strong style="color:#aab4d0;">Weather:</strong>
+      {{ g.weather_condition }}{% if g.weather_temp %}, {{ g.weather_temp }}&deg;F{% endif %}{% if g.weather_wind %} &mdash; {{ g.weather_wind }}{% endif %}
+    </span>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Team line ── #}
+<div class="row g-3 mb-4">
+  <div class="col-auto">
+    <div class="card bg-dark border-secondary p-2 text-center" style="min-width:70px;">
+      <div style="font-size:0.65rem; color:#8899bb; text-transform:uppercase;">AVG</div>
+      <div style="font-size:1.1rem; font-weight:700;
+        {% set avg_f = box.t_avg | float %}
+        color:{% if avg_f >= 0.300 %}#28a745{% elif avg_f < 0.200 %}#dc3545{% else %}#cdd9f0{% endif %};">
+        {{ box.t_avg }}
+      </div>
+    </div>
+  </div>
+  {% for label, val in [('AB', box.t_ab), ('H', box.t_h), ('HR', box.t_hr), ('RBI', box.t_rbi), ('BB', box.t_bb), ('SO', box.t_so)] %}
+  <div class="col-auto">
+    <div class="card bg-dark border-secondary p-2 text-center" style="min-width:55px;">
+      <div style="font-size:0.65rem; color:#8899bb; text-transform:uppercase;">{{ label }}</div>
+      <div style="font-size:1.1rem; font-weight:700; color:#cdd9f0;">{{ val }}</div>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="col-auto">
+    <div class="card bg-dark border-secondary p-2 text-center" style="min-width:60px;">
+      <div style="font-size:0.65rem; color:#8899bb; text-transform:uppercase;">IP</div>
+      <div style="font-size:1.1rem; font-weight:700; color:#cdd9f0;">{{ box.t_ip }}</div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card bg-dark border-secondary p-2 text-center" style="min-width:60px;">
+      <div style="font-size:0.65rem; color:#8899bb; text-transform:uppercase;">ERA</div>
+      <div style="font-size:1.1rem; font-weight:700;
+        {% set era_f = box.t_era | float if box.t_era != '-.--' else 0 %}
+        color:{% if era_f > 0 and era_f <= 3.00 %}#28a745{% elif era_f >= 5.50 %}#dc3545{% else %}#cdd9f0{% endif %};">
+        {{ box.t_era }}
+      </div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card bg-dark border-secondary p-2 text-center" style="min-width:65px;">
+      <div style="font-size:0.65rem; color:#8899bb; text-transform:uppercase;">WHIP</div>
+      <div style="font-size:1.1rem; font-weight:700;
+        {% set whip_f = box.t_whip | float if box.t_whip != '-.--' else 0 %}
+        color:{% if whip_f > 0 and whip_f <= 1.20 %}#28a745{% elif whip_f >= 1.60 %}#dc3545{% else %}#cdd9f0{% endif %};">
+        {{ box.t_whip }}
+      </div>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="card bg-dark border-secondary p-2 text-center" style="min-width:55px;">
+      <div style="font-size:0.65rem; color:#8899bb; text-transform:uppercase;">K</div>
+      <div style="font-size:1.1rem; font-weight:700; color:#cdd9f0;">{{ box.t_pso }}</div>
+    </div>
+  </div>
+</div>
+
+{# ── Batting box score ── #}
+<h5 class="section-title">Batting</h5>
+{% if box.batters|length == 0 %}
+  <div class="text-secondary mb-4">No batting data.</div>
+{% else %}
+<div class="table-responsive mb-4">
+<table class="table table-sm table-bordered table-rangers align-middle">
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th title="At-Bats">AB</th>
+      <th title="Hits">H</th>
+      <th title="Home Runs">HR</th>
+      <th title="RBI">RBI</th>
+      <th title="Walks">BB</th>
+      <th title="Strikeouts">SO</th>
+      <th title="Batting Average">AVG</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in box.batters %}
+    {% set avg_f = b.avg | float %}
+    <tr>
+      <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
+      <td>{{ b.ab }}</td>
+      <td>{{ b.h }}</td>
+      <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}—{% endif %}</td>
+      <td>{{ b.rbi if b.rbi else '—' }}</td>
+      <td>{{ b.bb if b.bb else '—' }}</td>
+      <td>{{ b.so if b.so else '—' }}</td>
+      <td class="{% if avg_f >= 0.300 %}stat-good{% elif avg_f < 0.200 and b.ab > 0 %}stat-bad{% endif %}">
+        {{ b.avg if b.ab > 0 else '—' }}
+      </td>
+    </tr>
+    {% endfor %}
+    {# Totals row #}
+    {% set t_avg_f = box.t_avg | float %}
+    <tr class="totals-row">
+      <td><em>Team</em></td>
+      <td>{{ box.t_ab }}</td>
+      <td>{{ box.t_h }}</td>
+      <td>{{ box.t_hr }}</td>
+      <td>{{ box.t_rbi }}</td>
+      <td>{{ box.t_bb }}</td>
+      <td>{{ box.t_so }}</td>
+      <td class="{% if t_avg_f >= 0.300 %}stat-good{% elif t_avg_f < 0.200 %}stat-bad{% endif %}">
+        {{ box.t_avg }}
+      </td>
+    </tr>
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{# ── Pitching box score ── #}
+<h5 class="section-title">Pitching</h5>
+{% if box.pitchers|length == 0 %}
+  <div class="text-secondary mb-4">No pitching data.</div>
+{% else %}
+<div class="table-responsive mb-4">
+<table class="table table-sm table-bordered table-rangers align-middle">
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th title="Innings Pitched">IP</th>
+      <th title="Hits Allowed">H</th>
+      <th title="Earned Runs">ER</th>
+      <th title="Walks">BB</th>
+      <th title="Strikeouts">SO</th>
+      <th title="ERA this outing">ERA</th>
+      <th title="WHIP this outing">WHIP</th>
+      <th title="Quality Start">QS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in box.pitchers %}
+    {% set era_f  = p.era  | float if p.era  != '-.--' else 0 %}
+    {% set whip_f = p.whip | float if p.whip != '-.--' else 0 %}
+    <tr>
+      <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+      <td>{{ p.ip }}</td>
+      <td>{{ p.h }}</td>
+      <td>{% if p.er >= 4 %}<span class="stat-bad">{{ p.er }}</span>{% else %}{{ p.er }}{% endif %}</td>
+      <td>{{ p.bb if p.bb else '—' }}</td>
+      <td>{{ p.so }}</td>
+      <td class="{% if era_f > 0 and era_f <= 3.00 %}stat-good{% elif era_f >= 5.50 %}stat-bad{% elif era_f >= 4.50 %}stat-warn{% endif %}">
+        {{ p.era }}
+      </td>
+      <td class="{% if whip_f > 0 and whip_f <= 1.20 %}stat-good{% elif whip_f >= 1.60 %}stat-bad{% elif whip_f >= 1.40 %}stat-warn{% endif %}">
+        {{ p.whip }}
+      </td>
+      <td class="{% if p.qs == 'YES' %}qs-yes{% else %}qs-no{% endif %}">{{ p.qs }}</td>
+    </tr>
+    {% endfor %}
+    {# Totals row #}
+    {% set t_era_f  = box.t_era  | float if box.t_era  != '-.--' else 0 %}
+    {% set t_whip_f = box.t_whip | float if box.t_whip != '-.--' else 0 %}
+    <tr class="totals-row">
+      <td><em>Team</em></td>
+      <td>{{ box.t_ip }}</td>
+      <td>—</td>
+      <td>{{ box.t_er }}</td>
+      <td>—</td>
+      <td>{{ box.t_pso }}</td>
+      <td class="{% if t_era_f > 0 and t_era_f <= 3.00 %}stat-good{% elif t_era_f >= 5.50 %}stat-bad{% elif t_era_f >= 4.50 %}stat-warn{% endif %}">
+        {{ box.t_era }}
+      </td>
+      <td class="{% if t_whip_f > 0 and t_whip_f <= 1.20 %}stat-good{% elif t_whip_f >= 1.60 %}stat-bad{% elif t_whip_f >= 1.40 %}stat-warn{% endif %}">
+        {{ box.t_whip }}
+      </td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% endblock %}

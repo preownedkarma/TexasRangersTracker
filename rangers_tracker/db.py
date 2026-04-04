@@ -32,6 +32,7 @@ def init_db():
             rangers_side  TEXT,
             venue         TEXT,
             roof          TEXT,
+            roof_status   TEXT,
             day_night     TEXT,
             game_time     TEXT,
             weather_condition TEXT,
@@ -67,6 +68,44 @@ def init_db():
         );
     """)
 
+    # Migration: add roof_status column to existing DBs that predate it
+    try:
+        c.execute("ALTER TABLE games ADD COLUMN roof_status TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
+    conn.commit()
+    conn.close()
+    _backfill_roof_status()
+
+
+def _backfill_roof_status():
+    """
+    Compute roof_status for any rows where it is NULL, using already-stored
+    roof type and weather columns.  Safe to call repeatedly — skips rows that
+    already have a value.
+    """
+    # Import here to avoid a circular import (sync imports db)
+    from sync import infer_roof_status
+
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT game_pk, roof, weather_condition, weather_wind "
+        "FROM games WHERE roof_status IS NULL"
+    ).fetchall()
+
+    for row in rows:
+        status = infer_roof_status(
+            row["roof"]              or "Open Air",
+            row["weather_condition"] or "",
+            row["weather_wind"]      or "",
+        )
+        conn.execute(
+            "UPDATE games SET roof_status = ? WHERE game_pk = ?",
+            (status, row["game_pk"]),
+        )
+
     conn.commit()
     conn.close()
 
@@ -83,7 +122,7 @@ def game_exists(game_pk):
 
 def insert_game(
     game_pk, date, opponent, result, score, rangers_side,
-    venue, roof, day_night, game_time,
+    venue, roof, roof_status, day_night, game_time,
     weather_condition, weather_temp, weather_wind
 ):
     conn = get_conn()
@@ -91,13 +130,13 @@ def insert_game(
         """
         INSERT OR REPLACE INTO games
             (game_pk, date, opponent, result, score, rangers_side,
-             venue, roof, day_night, game_time,
+             venue, roof, roof_status, day_night, game_time,
              weather_condition, weather_temp, weather_wind)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             game_pk, date, opponent, result, score, rangers_side,
-            venue, roof, day_night, game_time,
+            venue, roof, roof_status, day_night, game_time,
             weather_condition, weather_temp, weather_wind,
         ),
     )

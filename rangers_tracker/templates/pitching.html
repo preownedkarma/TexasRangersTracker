@@ -26,6 +26,8 @@
       <th class="sortable" data-col="8" title="Walks + Hits per Inning">WHIP</th>
       <th class="sortable" data-col="10" title="Fielding Independent Pitching (est)">FIP*</th>
       <th class="sortable" data-col="11" title="Strikeout-to-Walk Ratio">K/BB</th>
+      <th class="sortable" data-col="12" title="ERA vs right-handed batters (MLB API)">vs RHB</th>
+      <th class="sortable" data-col="13" title="ERA vs left-handed batters (MLB API)">vs LHB</th>
     </tr>
   </thead>
   <tbody>
@@ -65,6 +67,24 @@
       </td>
       <td>{{ p.fip_est if p.fip_est is not none else '-' }}</td>
       <td>{{ p.kbb }}</td>
+      <td class="{% if p.vr_outs >= 9 and p.vr_era_val <= 3.00 %}stat-good{% elif p.vr_outs >= 9 and p.vr_era_val >= 5.00 %}stat-bad{% elif p.vr_outs >= 9 and p.vr_era_val >= 4.00 %}stat-warn{% endif %}"
+          title="{% if p.vr_outs == 0 %}No PA vs RHB this season{% else %}{{ p.vr_er }} ER in {{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }} IP vs RHB{% endif %}">
+        {% if p.vr_outs == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ p.vr_era }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vr_er }}ER/{{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }}IP</span>
+        {% endif %}
+      </td>
+      <td class="{% if p.vl_outs >= 9 and p.vl_era_val <= 3.00 %}stat-good{% elif p.vl_outs >= 9 and p.vl_era_val >= 5.00 %}stat-bad{% elif p.vl_outs >= 9 and p.vl_era_val >= 4.00 %}stat-warn{% endif %}"
+          title="{% if p.vl_outs == 0 %}No PA vs LHB this season{% else %}{{ p.vl_er }} ER in {{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }} IP vs LHB{% endif %}">
+        {% if p.vl_outs == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ p.vl_era }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vl_er }}ER/{{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }}IP</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -94,6 +114,8 @@
       <th class="sortable" data-col="9" title="Walks + Hits per Inning">WHIP</th>
       <th class="sortable" data-col="10" title="Fielding Independent Pitching (est)">FIP*</th>
       <th class="sortable" data-col="11" title="Strikeout-to-Walk Ratio">K/BB</th>
+      <th class="sortable" data-col="12" title="Season ERA vs right-handed batters">vs RHB</th>
+      <th class="sortable" data-col="13" title="Season ERA vs left-handed batters">vs LHB</th>
     </tr>
   </thead>
   <tbody>
@@ -131,6 +153,24 @@
       </td>
       <td>{{ p.fip_est if p.fip_est is not none else '-' }}</td>
       <td>{{ p.kbb }}</td>
+      <td class="{% if p.vr_outs >= 9 and p.vr_era_val <= 3.00 %}stat-good{% elif p.vr_outs >= 9 and p.vr_era_val >= 5.00 %}stat-bad{% elif p.vr_outs >= 9 and p.vr_era_val >= 4.00 %}stat-warn{% endif %}"
+          title="{% if p.vr_outs == 0 %}No PA vs RHB this season{% else %}{{ p.vr_er }} ER in {{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }} IP vs RHB{% endif %}">
+        {% if p.vr_outs == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ p.vr_era }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vr_er }}ER/{{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }}IP</span>
+        {% endif %}
+      </td>
+      <td class="{% if p.vl_outs >= 9 and p.vl_era_val <= 3.00 %}stat-good{% elif p.vl_outs >= 9 and p.vl_era_val >= 5.00 %}stat-bad{% elif p.vl_outs >= 9 and p.vl_era_val >= 4.00 %}stat-warn{% endif %}"
+          title="{% if p.vl_outs == 0 %}No PA vs LHB this season{% else %}{{ p.vl_er }} ER in {{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }} IP vs LHB{% endif %}">
+        {% if p.vl_outs == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ p.vl_era }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vl_er }}ER/{{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }}IP</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -140,7 +180,8 @@
   {{ rolling | length }} pitcher{{ 's' if rolling | length != 1 }} shown &mdash;
   <span class="stat-good">Blue</span> = ERA &le; 3.00 / WHIP &le; 1.20 &nbsp;|&nbsp;
   <span class="stat-warn">Yellow</span> = ERA 4.00&ndash;4.99 / WHIP 1.40&ndash;1.59 &nbsp;|&nbsp;
-  <span class="stat-bad">Red</span> = ERA &ge; 5.00 / WHIP &ge; 1.60
+  <span class="stat-bad">Red</span> = ERA &ge; 5.00 / WHIP &ge; 1.60 &nbsp;|&nbsp;
+  <em>vs RHB / vs LHB are season totals from MLB Stats API (min 3 IP for color)</em>
 </p>
 {% endif %}
 

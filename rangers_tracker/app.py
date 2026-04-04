@@ -11,7 +11,10 @@ Routes:
 
 import json
 import os
+import time
+import threading
 import requests as _requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, render_template, abort, redirect, url_for, flash, request
 
 import db
@@ -19,6 +22,62 @@ import sync as sync_module
 
 RANGERS_ID  = 140
 SEASON_YEAR = 2026
+
+# Lat/lon for every current MLB stadium — used for Open-Meteo weather forecasts
+STADIUM_COORDS = {
+    # AL West
+    "Globe Life Field":             (32.7473, -97.0837),   # Arlington, TX
+    "Minute Maid Park":             (29.7571, -95.3556),   # Houston, TX
+    "T-Mobile Park":                (47.5914, -122.3326),  # Seattle, WA
+    "Angel Stadium":                (33.8003, -117.8827),  # Anaheim, CA
+    "Oakland Coliseum":             (37.7516, -122.2005),  # Oakland, CA
+    "Sutter Health Park":           (38.5802, -121.5000),  # Sacramento, CA (A's temp)
+    # AL Central
+    "Guaranteed Rate Field":        (41.8300, -87.6339),   # Chicago, IL
+    "Progressive Field":            (41.4959, -81.6852),   # Cleveland, OH
+    "Comerica Park":                (42.3390, -83.0485),   # Detroit, MI
+    "Kauffman Stadium":             (39.0517, -94.4803),   # Kansas City, MO
+    "American Family Field":        (43.0283, -87.9711),   # Milwaukee, WI
+    "Target Field":                 (44.9817, -93.2781),   # Minneapolis, MN
+    # AL East
+    "Oriole Park at Camden Yards":  (39.2839, -76.6222),   # Baltimore, MD
+    "Fenway Park":                  (42.3467, -71.0972),   # Boston, MA
+    "Yankee Stadium":               (40.8296, -73.9262),   # Bronx, NY
+    "Rogers Centre":                (43.6414, -79.3894),   # Toronto, ON
+    "Tropicana Field":              (27.7682, -82.6534),   # St. Petersburg, FL
+    # NL West
+    "Dodger Stadium":               (34.0739, -118.2400),  # Los Angeles, CA
+    "Oracle Park":                  (37.7786, -122.3893),  # San Francisco, CA
+    "Petco Park":                   (32.7073, -117.1570),  # San Diego, CA
+    "Chase Field":                  (33.4455, -112.0667),  # Phoenix, AZ
+    "Coors Field":                  (39.7559, -104.9942),  # Denver, CO
+    # NL Central
+    "Wrigley Field":                (41.9484, -87.6553),   # Chicago, IL
+    "Great American Ball Park":     (39.0979, -84.5082),   # Cincinnati, OH
+    "American Family Field":        (43.0283, -87.9711),   # Milwaukee, WI (shared key)
+    "PNC Park":                     (40.4469, -80.0057),   # Pittsburgh, PA
+    "Busch Stadium":                (38.6226, -90.1928),   # St. Louis, MO
+    "Truist Park":                  (33.8908, -84.4678),   # Cumberland, GA
+    # NL East
+    "Citi Field":                   (40.7571, -73.8458),   # Flushing, NY
+    "Citizens Bank Park":           (39.9061, -75.1665),   # Philadelphia, PA
+    "Nationals Park":               (38.8730, -77.0074),   # Washington, DC
+    "loanDepot park":               (25.7781, -80.2196),   # Miami, FL
+    "Truist Park":                  (33.8908, -84.4678),   # Atlanta, GA
+}
+
+# WMO weather code → short description (used with Open-Meteo)
+_WMO_CODES = {
+    0: "Clear",         1: "Mainly Clear",   2: "Partly Cloudy",  3: "Overcast",
+    45: "Fog",          48: "Icy Fog",
+    51: "Lt Drizzle",   53: "Drizzle",       55: "Hvy Drizzle",
+    61: "Lt Rain",      63: "Rain",          65: "Hvy Rain",
+    71: "Lt Snow",      73: "Snow",          75: "Hvy Snow",
+    77: "Snow Grains",
+    80: "Rain Showers", 81: "Rain Showers",  82: "Hvy Showers",
+    85: "Snow Showers", 86: "Hvy Snow Shwr",
+    95: "Thunderstorm", 96: "T-Storm/Hail",  99: "Svr T-Storm",
+}
 
 # Map opponent name keywords → time-zone label used for record splits.
 # When Rangers are away, the opponent IS the home team.
@@ -140,6 +199,180 @@ def parse_runs_allowed(score_str):
 
 
 # ─── Data helpers ─────────────────────────────────────────────────────────────
+
+def get_game_archive():
+    """
+    Return all games newest-first, each enriched with per-game team
+    batting and pitching totals for the archive list view.
+    """
+    conn = db.get_conn()
+
+    # Team batting totals per game (exclude two-way players counted as pitchers)
+    bat_rows = conn.execute(
+        """
+        SELECT
+            g.game_pk,
+            SUM(bl.ab)  AS t_ab,
+            SUM(bl.h)   AS t_h,
+            SUM(bl.hr)  AS t_hr,
+            SUM(bl.rbi) AS t_rbi,
+            SUM(bl.bb)  AS t_bb,
+            SUM(bl.so)  AS t_so
+        FROM games g
+        LEFT JOIN batter_lines bl
+            ON bl.game_pk = g.game_pk
+            AND bl.player_id NOT IN (SELECT DISTINCT player_id FROM pitcher_lines)
+        GROUP BY g.game_pk
+        """
+    ).fetchall()
+    bat_map = {r["game_pk"]: dict(r) for r in bat_rows}
+
+    # Team pitching totals per game
+    pit_rows = conn.execute(
+        """
+        SELECT
+            game_pk,
+            GROUP_CONCAT(ip_str) AS ip_list,
+            SUM(er)  AS t_er,
+            SUM(h)   AS t_ph,
+            SUM(bb)  AS t_pbb,
+            SUM(so)  AS t_pso
+        FROM pitcher_lines
+        GROUP BY game_pk
+        """
+    ).fetchall()
+    pit_map = {r["game_pk"]: dict(r) for r in pit_rows}
+
+    games = conn.execute(
+        "SELECT * FROM games ORDER BY date DESC"
+    ).fetchall()
+    conn.close()
+
+    result = []
+    for idx, g in enumerate(games):
+        gd  = dict(g)
+        pk  = gd["game_pk"]
+        bat = bat_map.get(pk, {})
+        pit = pit_map.get(pk, {})
+
+        t_ab  = bat.get("t_ab")  or 0
+        t_h   = bat.get("t_h")   or 0
+        t_hr  = bat.get("t_hr")  or 0
+        t_rbi = bat.get("t_rbi") or 0
+        t_bb  = bat.get("t_bb")  or 0
+        t_so  = bat.get("t_so")  or 0
+
+        outs  = sum(ip_to_outs(x) for x in (pit.get("ip_list") or "").split(",") if x)
+        t_er  = pit.get("t_er")  or 0
+        t_ph  = pit.get("t_ph")  or 0
+        t_pbb = pit.get("t_pbb") or 0
+        t_pso = pit.get("t_pso") or 0
+
+        result.append({
+            **gd,
+            "gp":     len(games) - idx,   # game number (oldest = 1)
+            "t_ab":   t_ab,
+            "t_h":    t_h,
+            "t_hr":   t_hr,
+            "t_rbi":  t_rbi,
+            "t_bb":   t_bb,
+            "t_so":   t_so,
+            "t_avg":  fmt_avg(safe_avg(t_h, t_ab)),
+            "t_ip":   outs_to_ip(outs),
+            "t_er":   t_er,
+            "t_era":  era_str(t_er, outs),
+            "t_whip": whip_str(t_ph, t_pbb, outs),
+            "t_pso":  t_pso,
+        })
+
+    return result
+
+
+def get_game_box_score(game_pk):
+    """
+    Return full box score for a single game:
+      game metadata + per-player batting + per-player pitching.
+    Returns None if game_pk is not found.
+    """
+    conn = db.get_conn()
+    game_row = conn.execute(
+        "SELECT * FROM games WHERE game_pk = ?", (game_pk,)
+    ).fetchone()
+    if not game_row:
+        conn.close()
+        return None
+
+    pit_rows = conn.execute(
+        "SELECT * FROM pitcher_lines WHERE game_pk = ? ORDER BY id ASC",
+        (game_pk,),
+    ).fetchall()
+    pitcher_ids = {r["player_id"] for r in pit_rows}
+
+    bat_rows = conn.execute(
+        "SELECT * FROM batter_lines WHERE game_pk = ? ORDER BY ab DESC, h DESC",
+        (game_pk,),
+    ).fetchall()
+    conn.close()
+
+    # Build per-player batting (exclude two-way pitchers)
+    batters = []
+    t_ab = t_h = t_hr = t_rbi = t_bb = t_so = 0
+    for r in bat_rows:
+        if r["player_id"] in pitcher_ids:
+            continue
+        avg = fmt_avg(safe_avg(r["h"], r["ab"]))
+        batters.append({
+            "player_id":   r["player_id"],
+            "player_name": r["player_name"],
+            "ab":  r["ab"],
+            "h":   r["h"],
+            "hr":  r["hr"],
+            "rbi": r["rbi"],
+            "bb":  r["bb"],
+            "so":  r["so"],
+            "avg": avg,
+        })
+        t_ab  += r["ab"];  t_h   += r["h"];   t_hr  += r["hr"]
+        t_rbi += r["rbi"]; t_bb  += r["bb"];  t_so  += r["so"]
+
+    # Build per-player pitching
+    pitchers = []
+    t_outs = t_er = t_ph = t_pbb = t_pso = 0
+    for r in pit_rows:
+        outs  = ip_to_outs(r["ip_str"])
+        whip  = whip_str(r["h"], r["bb"], outs)
+        era   = era_str(r["er"], outs)
+        qs    = qs_flag(r["ip_str"], r["er"])
+        pitchers.append({
+            "player_id":   r["player_id"],
+            "player_name": r["player_name"],
+            "ip":   r["ip_str"],
+            "h":    r["h"],
+            "er":   r["er"],
+            "bb":   r["bb"],
+            "so":   r["so"],
+            "era":  era,
+            "whip": whip,
+            "qs":   qs,
+        })
+        t_outs += outs; t_er  += r["er"]
+        t_ph   += r["h"]; t_pbb += r["bb"]; t_pso += r["so"]
+
+    return {
+        "game":     dict(game_row),
+        "batters":  batters,
+        "pitchers": pitchers,
+        # team totals
+        "t_ab":   t_ab,  "t_h":  t_h,  "t_hr":  t_hr,
+        "t_rbi":  t_rbi, "t_bb": t_bb, "t_so":  t_so,
+        "t_avg":  fmt_avg(safe_avg(t_h, t_ab)),
+        "t_ip":   outs_to_ip(t_outs),
+        "t_er":   t_er,
+        "t_era":  era_str(t_er, t_outs),
+        "t_whip": whip_str(t_ph, t_pbb, t_outs),
+        "t_pso":  t_pso,
+    }
+
 
 def get_all_games():
     """Return all games ordered by date ascending."""
@@ -357,10 +590,15 @@ def get_season_batting():
         ab  = r["ab"]
         h   = r["h"]
         bb  = r["bb"]
+        so  = r["so"]
+        hr  = r["hr"]
         avg = safe_avg(h, ab)
         obp = safe_avg(h + bb, ab + bb)
         pa = r["pa"] if r["pa"] is not None else 0
-        iso = round((h - r["hr"]) / ab, 3) if ab > 0 else 0.0
+        iso = round((h - hr) / ab, 3) if ab > 0 else 0.0
+        k_pct_val = round(so / (ab + bb), 3) if (ab + bb) > 0 else 0.0
+        babip_denom = ab - so - hr
+        babip_val = round((h - hr) / babip_denom, 3) if babip_denom > 0 else 0.0
 
         result.append({
             "player_id":   r["player_id"],
@@ -368,18 +606,75 @@ def get_season_batting():
             "g":   r["g"],
             "ab":  ab,
             "h":   h,
-            "hr":  r["hr"],
+            "hr":  hr,
             "rbi": r["rbi"],
             "bb":  bb,
-            "so":  r["so"],
+            "so":  so,
             "pa":  pa,
             "iso": fmt_avg(iso),
             "iso_val": iso,
             "avg": fmt_avg(avg),
             "obp": fmt_avg(obp),
-            "avg_val": avg,   # raw float for color-coding
+            "avg_val": avg,
             "obp_val": obp,
+            "k_pct":     fmt_avg(k_pct_val),
+            "k_pct_val": k_pct_val,
+            "babip":     fmt_avg(babip_val),
+            "babip_val": babip_val,
         })
+    return result
+
+
+def get_pre_window_batting(n=10):
+    """
+    Aggregate batter stats for all games BEFORE the last N game dates.
+    Returns a dict keyed by player_id — used as the baseline for hot/cold deltas.
+    Requires at least 5 AB to be included (avoids noise from 1-AB appearances).
+    """
+    conn = db.get_conn()
+    date_rows = conn.execute(
+        "SELECT DISTINCT date FROM games ORDER BY date DESC LIMIT ?", (n,)
+    ).fetchall()
+    if not date_rows:
+        conn.close()
+        return {}
+    cutoff = date_rows[-1]["date"]  # oldest date IN the rolling window
+
+    rows = conn.execute(
+        """
+        SELECT
+            bl.player_id,
+            SUM(bl.ab)  AS ab,
+            SUM(bl.h)   AS h,
+            SUM(bl.bb)  AS bb,
+            SUM(bl.so)  AS so
+        FROM batter_lines bl
+        JOIN games g ON g.game_pk = bl.game_pk
+        WHERE g.date < ?
+          AND bl.player_id NOT IN (SELECT DISTINCT player_id FROM pitcher_lines)
+        GROUP BY bl.player_id
+        HAVING SUM(bl.ab) >= 5
+        """,
+        (cutoff,),
+    ).fetchall()
+    conn.close()
+
+    result = {}
+    for r in rows:
+        ab  = r["ab"]
+        h   = r["h"]
+        bb  = r["bb"]
+        so  = r["so"]
+        avg = safe_avg(h, ab)
+        obp = safe_avg(h + bb, ab + bb)
+        pa  = ab + bb
+        k_pct_val = round(so / pa, 3) if pa > 0 else 0.0
+        result[r["player_id"]] = {
+            "avg_val":   avg,
+            "obp_val":   obp,
+            "k_pct_val": k_pct_val,
+            "ab":        ab,
+        }
     return result
 
 
@@ -429,25 +724,35 @@ def get_rolling_batting(n=10):
         ab  = r["ab"]
         h   = r["h"]
         bb  = r["bb"]
+        so  = r["so"]
+        hr  = r["hr"]
         avg = safe_avg(h, ab)
         obp = safe_avg(h + bb, ab + bb)
-        iso = round((h - r["hr"]) / ab, 3) if ab > 0 else 0.0
+        iso = round((h - hr) / ab, 3) if ab > 0 else 0.0
+        pa  = ab + bb
+        k_pct_val = round(so / pa, 3) if pa > 0 else 0.0
+        babip_denom = ab - so - hr
+        babip_val = round((h - hr) / babip_denom, 3) if babip_denom > 0 else 0.0
         result.append({
             "player_id":   r["player_id"],
             "player_name": r["player_name"],
             "g":   r["g"],
             "ab":  ab,
             "h":   h,
-            "hr":  r["hr"],
+            "hr":  hr,
             "rbi": r["rbi"],
             "bb":  bb,
-            "so":  r["so"],
+            "so":  so,
             "iso": fmt_avg(iso),
             "iso_val": iso,
             "avg": fmt_avg(avg),
             "obp": fmt_avg(obp),
             "avg_val": avg,
             "obp_val": obp,
+            "k_pct":     fmt_avg(k_pct_val),
+            "k_pct_val": k_pct_val,
+            "babip":     fmt_avg(babip_val),
+            "babip_val": babip_val,
         })
 
     result.sort(key=lambda x: x["avg_val"], reverse=True)
@@ -685,6 +990,52 @@ def fetch_playoff_data():
     return out
 
 
+def fetch_forecast_weather(venue, game_dt_utc):
+    """
+    Fetch an hourly weather forecast from Open-Meteo (free, no API key) for
+    the given stadium at the UTC game start time.
+
+    Returns a dict:
+        { "condition": str, "temp_f": int, "wind_mph": int, "precip_pct": int }
+    or None if the venue is unknown or the request fails.
+    """
+    coords = STADIUM_COORDS.get(venue)
+    if not coords:
+        return None
+    lat, lon = coords
+
+    # Open-Meteo supports up to 16 days ahead in the standard forecast endpoint.
+    target_hour = game_dt_utc.strftime("%Y-%m-%dT%H:00")
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&hourly=temperature_2m,precipitation_probability,windspeed_10m,weathercode"
+        f"&temperature_unit=fahrenheit&windspeed_unit=mph"
+        f"&timezone=UTC&forecast_days=16"
+    )
+    try:
+        resp = _requests.get(url, timeout=10)
+        if resp.status_code != 200:
+            return None
+        hourly = resp.json().get("hourly", {})
+        times  = hourly.get("time", [])
+        if target_hour not in times:
+            return None
+        idx = times.index(target_hour)
+        wcode     = hourly["weathercode"][idx]
+        temp_f    = hourly["temperature_2m"][idx]
+        wind_mph  = hourly["windspeed_10m"][idx]
+        precip    = hourly["precipitation_probability"][idx]
+        return {
+            "condition":  _WMO_CODES.get(wcode, f"Code {wcode}"),
+            "temp_f":     round(temp_f)   if temp_f   is not None else None,
+            "wind_mph":   round(wind_mph) if wind_mph is not None else None,
+            "precip_pct": precip          if precip   is not None else None,
+        }
+    except Exception:
+        return None
+
+
 def fetch_next_series():
     """
     Fetch the next upcoming series for the Rangers from the MLB schedule API.
@@ -756,27 +1107,39 @@ def fetch_next_series():
             pp = game.get("teams", {}).get(side, {}).get("probablePitcher", {})
             return pp.get("fullName") if pp else None
 
-        def _fmt_time(game):
+        def _parse_utc(game):
+            from datetime import datetime
             dt_str = game.get("gameDate", "")
             if not dt_str:
+                return None
+            try:
+                return datetime.fromisoformat(dt_str.replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                return None
+
+        def _fmt_time(utc_dt):
+            if not utc_dt:
                 return ""
             try:
-                from datetime import datetime, timedelta
-                utc = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                cdt = utc + timedelta(hours=-5)
+                from datetime import timedelta
+                cdt = utc_dt + timedelta(hours=-5)
                 return cdt.strftime("%I:%M %p CDT").lstrip("0")
             except Exception:
                 return ""
 
         games_out = []
         for game, r_side, o_side in series_games:
+            game_venue = game.get("venue", {}).get("name", "") or venue
+            utc_dt     = _parse_utc(game)
+            forecast   = fetch_forecast_weather(game_venue, utc_dt) if utc_dt else None
             games_out.append({
-                "date":             game.get("officialDate") or game.get("gameDate", "")[:10],
-                "game_pk":          game.get("gamePk"),
-                "time":             _fmt_time(game),
-                "home_away":        "Home" if r_side == "home" else "Away",
-                "rangers_starter":  _probable(game, r_side),
-                "opp_starter":      _probable(game, o_side),
+                "date":            game.get("officialDate") or game.get("gameDate", "")[:10],
+                "game_pk":         game.get("gamePk"),
+                "time":            _fmt_time(utc_dt),
+                "home_away":       "Home" if r_side == "home" else "Away",
+                "rangers_starter": _probable(game, r_side),
+                "opp_starter":     _probable(game, o_side),
+                "forecast":        forecast,
             })
 
         return {
@@ -815,14 +1178,18 @@ def fetch_team_ranks():
     out = {}
 
     hitting_fields = [
-        ("avg",  "avg",         False, lambda v: f"{float(v):.3f}".lstrip("0") or ".000"),
-        ("obp",  "obp",         False, lambda v: f"{float(v):.3f}".lstrip("0") or ".000"),
-        ("rbi",  "rbi",         False, lambda v: str(int(v))),
+        ("avg",  "avg",          False, lambda v: f"{float(v):.3f}".lstrip("0") or ".000"),
+        ("obp",  "obp",          False, lambda v: f"{float(v):.3f}".lstrip("0") or ".000"),
+        ("rbi",  "rbi",          False, lambda v: str(int(v))),
+        ("hits", "hits",         False, lambda v: str(int(v))),
+        ("bb",   "baseOnBalls",  False, lambda v: str(int(v))),
     ]
     pitching_fields = [
-        ("era",  "era",         True,  lambda v: f"{float(v):.2f}"),
-        ("whip", "whip",        True,  lambda v: f"{float(v):.2f}"),
-        ("er",   "earnedRuns",  True,  lambda v: str(int(v))),
+        ("era",  "era",          True,  lambda v: f"{float(v):.2f}"),
+        ("whip", "whip",         True,  lambda v: f"{float(v):.2f}"),
+        ("er",   "earnedRuns",   True,  lambda v: str(int(v))),
+        ("k",    "strikeOuts",   False, lambda v: str(int(v))),
+        ("pbb",  "baseOnBalls",  True,  lambda v: str(int(v))),
     ]
 
     for group, fields in (("hitting", hitting_fields), ("pitching", pitching_fields)):
@@ -870,6 +1237,36 @@ def fetch_team_ranks():
     return out
 
 
+def fetch_rangers_pitcher_season_stats():
+    """
+    Fetch per-player pitching stats from the MLB Stats API for the Rangers.
+    Returns dict keyed by player_id with saves, holds, gamesStarted.
+    Falls back to empty dict on any failure.
+    """
+    url = (
+        f"https://statsapi.mlb.com/api/v1/stats"
+        f"?stats=season&group=pitching&teamId={RANGERS_ID}&season={SEASON_YEAR}&sportId=1"
+    )
+    try:
+        r = _requests.get(url, timeout=15)
+        if r.status_code != 200:
+            return {}
+        splits = r.json().get("stats", [{}])[0].get("splits", [])
+        result = {}
+        for s in splits:
+            pid  = s.get("player", {}).get("id")
+            stat = s.get("stat", {})
+            if pid:
+                result[pid] = {
+                    "saves":         int(stat.get("saves",        0) or 0),
+                    "holds":         int(stat.get("holds",        0) or 0),
+                    "games_started": int(stat.get("gamesStarted", 0) or 0),
+                }
+        return result
+    except Exception:
+        return {}
+
+
 def get_season_overview():
     """Return season record, top batters, top pitchers, and team rank data."""
     games   = get_all_games()
@@ -901,6 +1298,33 @@ def get_season_overview():
     ranks    = fetch_team_ranks()
     playoff  = fetch_playoff_data()
 
+    # ── Batter leaderboards (top 3) ───────────────────────────────────────
+    MIN_AB = 10
+    qual_batters = [b for b in batting if b["ab"] >= MIN_AB]
+    top_h   = sorted(batting,      key=lambda x: x["h"],       reverse=True)[:3]
+    top_avg = sorted(qual_batters, key=lambda x: x["avg_val"], reverse=True)[:3]
+    top_hr  = sorted(batting,      key=lambda x: x["hr"],      reverse=True)[:3]
+
+    # ── Pitcher leaderboards (top 3) ─────────────────────────────────────
+    api_stats = fetch_rangers_pitcher_season_stats()
+    for p in pitching:
+        api = api_stats.get(p["player_id"], {})
+        p["saves"]         = api.get("saves",         0)
+        p["holds"]         = api.get("holds",         0)
+        p["games_started"] = api.get("games_started", 0)
+
+    MIN_SP_OUTS = 9   # at least 3 IP to qualify for ERA/WHIP leaderboard
+    starters  = [p for p in pitching if p.get("games_started", 0) > 0]
+    relievers = [p for p in pitching if p.get("games_started", 0) == 0 and p["g"] > 0]
+
+    top_sp_era  = sorted([p for p in starters if p["outs"] >= MIN_SP_OUTS],
+                         key=lambda x: x["era_val"])[:3]
+    top_sp_k    = sorted(starters, key=lambda x: x["so"],  reverse=True)[:3]
+    top_sp_whip = sorted([p for p in starters if p["outs"] >= MIN_SP_OUTS],
+                         key=lambda x: x["whip_val"])[:3]
+    top_rp_sv   = sorted(relievers, key=lambda x: x["saves"], reverse=True)[:3]
+    top_rp_hld  = sorted(relievers, key=lambda x: x["holds"], reverse=True)[:3]
+
     return {
         "wins":         wins,
         "losses":       losses,
@@ -916,6 +1340,15 @@ def get_season_overview():
         "div_w":   div_w,   "div_l":   div_l,
         "ndiv_w":  ndiv_w,  "ndiv_l":  ndiv_l,
         "tz_records": tz_records,
+        # leaderboards
+        "top_h":        top_h,
+        "top_avg":      top_avg,
+        "top_hr":       top_hr,
+        "top_sp_era":   top_sp_era,
+        "top_sp_k":     top_sp_k,
+        "top_sp_whip":  top_sp_whip,
+        "top_rp_sv":    top_rp_sv,
+        "top_rp_hld":   top_rp_hld,
     }
 
 
@@ -1095,14 +1528,161 @@ def season():
     return render_template("season.html", overview=overview)
 
 
+# Cache: {data: dict, ts: float} — refreshed every 15 minutes
+_splits_cache: dict = {"data": {}, "ts": 0.0}
+_splits_lock = threading.Lock()
+_SPLITS_TTL  = 900   # seconds
+
+# Pitching splits cache (ERA vs LHB / RHB)
+_p_splits_cache: dict = {"data": {}, "ts": 0.0}
+_p_splits_lock = threading.Lock()
+
+
+def _fetch_splits_for_player(pid):
+    """Fetch vl/vr splits for a single player ID. Returns (pid, {vl:[h,ab], vr:[h,ab]})."""
+    url = (
+        f"https://statsapi.mlb.com/api/v1/people/{pid}/stats"
+        f"?stats=statSplits&group=hitting&season={SEASON_YEAR}&sitCodes=vl,vr&sportId=1"
+    )
+    raw = {"vl": [0, 0], "vr": [0, 0]}
+    try:
+        r = _requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return pid, raw
+        for stat_obj in r.json().get("stats", []):
+            for s in stat_obj.get("splits", []):
+                code = s.get("split", {}).get("code", "")
+                if code not in ("vl", "vr"):
+                    continue
+                stat = s.get("stat", {})
+                raw[code][0] += int(stat.get("hits",   0) or 0)
+                raw[code][1] += int(stat.get("atBats", 0) or 0)
+    except Exception:
+        pass
+    return pid, raw
+
+
+def fetch_batting_splits():
+    """
+    Fetch vs-LHP / vs-RHP splits for every batter in the local DB.
+    Uses per-player API calls (the team endpoint omits recently-added players).
+    Calls run in parallel and results are cached for 15 minutes.
+
+    Returns: { player_id: { vl_avg, vl_ab, vl_h, vr_avg, vr_ab, vr_h } }
+    """
+    with _splits_lock:
+        if time.time() - _splits_cache["ts"] < _SPLITS_TTL and _splits_cache["data"]:
+            return _splits_cache["data"]
+
+    # Collect every batter ID currently in the DB
+    conn = db.get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT player_id FROM batter_lines "
+        "WHERE player_id NOT IN (SELECT DISTINCT player_id FROM pitcher_lines)"
+    ).fetchall()
+    conn.close()
+    player_ids = [r["player_id"] for r in rows]
+
+    result = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch_splits_for_player, pid): pid for pid in player_ids}
+        for future in as_completed(futures):
+            pid, raw = future.result()
+            d = {}
+            for code in ("vl", "vr"):
+                h, ab = raw[code]
+                d[f"{code}_h"]   = h
+                d[f"{code}_ab"]  = ab
+                d[f"{code}_avg"] = fmt_avg(safe_avg(h, ab)) if ab > 0 else "—"
+            result[pid] = d
+
+    with _splits_lock:
+        _splits_cache["data"] = result
+        _splits_cache["ts"]   = time.time()
+
+    return result
+
+
+def _fetch_pitching_splits_for_player(pid):
+    """Fetch vl/vr pitching splits for a single pitcher. Returns (pid, {vl:[er,outs], vr:[er,outs]})."""
+    url = (
+        f"https://statsapi.mlb.com/api/v1/people/{pid}/stats"
+        f"?stats=statSplits&group=pitching&season={SEASON_YEAR}&sitCodes=vl,vr&sportId=1"
+    )
+    raw = {"vl": [0, 0], "vr": [0, 0]}
+    try:
+        r = _requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return pid, raw
+        for stat_obj in r.json().get("stats", []):
+            for s in stat_obj.get("splits", []):
+                code = s.get("split", {}).get("code", "")
+                if code not in ("vl", "vr"):
+                    continue
+                stat = s.get("stat", {})
+                raw[code][0] += int(stat.get("earnedRuns", 0) or 0)
+                raw[code][1] += int(stat.get("outs",       0) or 0)
+    except Exception:
+        pass
+    return pid, raw
+
+
+def fetch_pitching_splits():
+    """
+    Fetch ERA vs LHB / vs RHB splits for every pitcher in the local DB.
+    Uses per-player API calls with group=pitching. Cached for 15 minutes.
+
+    Returns: { player_id: { vl_era, vl_er, vl_outs, vr_era, vr_er, vr_outs } }
+    """
+    with _p_splits_lock:
+        if time.time() - _p_splits_cache["ts"] < _SPLITS_TTL and _p_splits_cache["data"]:
+            return _p_splits_cache["data"]
+
+    conn = db.get_conn()
+    rows = conn.execute("SELECT DISTINCT player_id FROM pitcher_lines").fetchall()
+    conn.close()
+    player_ids = [r["player_id"] for r in rows]
+
+    result = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch_pitching_splits_for_player, pid): pid for pid in player_ids}
+        for future in as_completed(futures):
+            pid, raw = future.result()
+            d = {}
+            for code in ("vl", "vr"):
+                er, outs = raw[code]
+                era_val  = round((er * 27) / outs, 2) if outs > 0 else None
+                d[f"{code}_er"]   = er
+                d[f"{code}_outs"] = outs
+                d[f"{code}_era"]  = f"{era_val:.2f}" if era_val is not None else "—"
+                d[f"{code}_era_val"] = era_val if era_val is not None else 99.0
+            result[pid] = d
+
+    with _p_splits_lock:
+        _p_splits_cache["data"] = result
+        _p_splits_cache["ts"]   = time.time()
+
+    return result
+
+
 @app.route("/season/batting")
 def season_batting():
     db.init_db()
     n = request.args.get("n", default=10, type=int)
     if n not in (7, 10, 14, 30):
         n = 10
-    batters  = get_season_batting()
-    rolling  = get_rolling_batting(n)
+    batters = get_season_batting()
+    rolling = get_rolling_batting(n)
+    splits  = fetch_batting_splits()
+    for lst in (batters, rolling):
+        for b in lst:
+            sp = splits.get(b["player_id"], {})
+            b["vl_avg"] = sp.get("vl_avg", "—")
+            b["vl_ab"]  = sp.get("vl_ab",  0)
+            b["vl_h"]   = sp.get("vl_h",   0)
+            b["vr_avg"] = sp.get("vr_avg", "—")
+            b["vr_ab"]  = sp.get("vr_ab",  0)
+            b["vr_h"]   = sp.get("vr_h",   0)
     return render_template("batting.html", batters=batters, rolling=rolling, rolling_window=n)
 
 
@@ -1114,6 +1694,18 @@ def season_pitching():
         n = 10
     pitchers = get_season_pitching()
     rolling  = get_rolling_pitching(n)
+    p_splits = fetch_pitching_splits()
+    for lst in (pitchers, rolling):
+        for p in lst:
+            sp = p_splits.get(p["player_id"], {})
+            p["vl_era"]     = sp.get("vl_era",     "—")
+            p["vl_era_val"] = sp.get("vl_era_val", 99.0)
+            p["vl_er"]      = sp.get("vl_er",      0)
+            p["vl_outs"]    = sp.get("vl_outs",    0)
+            p["vr_era"]     = sp.get("vr_era",     "—")
+            p["vr_era_val"] = sp.get("vr_era_val", 99.0)
+            p["vr_er"]      = sp.get("vr_er",      0)
+            p["vr_outs"]    = sp.get("vr_outs",    0)
     return render_template("pitching.html", pitchers=pitchers, rolling=rolling, rolling_window=n)
 
 
@@ -1150,27 +1742,39 @@ def season_trends():
         era_val = round((w_er * 9) / (w_outs / 3), 2) if w_outs > 0 else None
         era_data[i]["rolling"] = era_val
 
-    hundred = 100
-    rolling_bat = get_rolling_batting(n)
-    season_bat = get_season_batting()
-    season_map = {x["player_id"]: x for x in season_bat}
+    rolling_bat  = get_rolling_batting(n)
+    season_bat   = get_season_batting()
+    season_map   = {x["player_id"]: x for x in season_bat}
     adv = []
     for p in rolling_bat:
         season_profile = season_map.get(p["player_id"])
         if not season_profile:
             continue
-        delta = round(p["avg_val"] - season_profile.get("avg_val", 0), 3)
+        avg_delta = round(p["avg_val"]   - season_profile["avg_val"],   3)
+        obp_delta = round(p["obp_val"]   - season_profile["obp_val"],   3)
+        k_delta   = round(p["k_pct_val"] - season_profile["k_pct_val"], 3)
         adv.append({
-            "player_id": p["player_id"],
+            "player_id":   p["player_id"],
             "player_name": p["player_name"],
+            # Rolling window stats
+            "h":           p["h"],
+            "rbi":         p["rbi"],
             "rolling_avg": p["avg_val"],
-            "season_avg": season_profile.get("avg_val", 0),
-            "delta": delta,
+            "rolling_obp": p["obp_val"],
+            "k_pct":       p["k_pct"],
+            "babip":       p["babip"],
+            # Full-season baselines
+            "season_avg":  season_profile["avg_val"],
+            "season_obp":  season_profile["obp_val"],
+            # Deltas: rolling window minus season average
+            "delta":       avg_delta,
+            "obp_delta":   obp_delta,
+            "k_delta":     k_delta,
         })
 
     adv.sort(key=lambda x: x["delta"], reverse=True)
-    top5 = adv[:5]
-    bottom5 = sorted(adv, key=lambda x: x["delta"])[:5]
+    top5    = adv[:5]
+    bottom5 = adv[-5:][::-1]   # 5 most negative deltas, worst first
 
     return render_template(
         "season_trends.html",
@@ -1180,6 +1784,22 @@ def season_trends():
         bottom5=bottom5,
         trend_window=n,
     )
+
+
+@app.route("/games")
+def game_archive():
+    db.init_db()
+    games = get_game_archive()
+    return render_template("game_archive.html", games=games)
+
+
+@app.route("/game/<int:game_pk>")
+def game_detail(game_pk):
+    db.init_db()
+    data = get_game_box_score(game_pk)
+    if data is None:
+        abort(404)
+    return render_template("game_detail.html", box=data)
 
 
 @app.route("/player/<int:player_id>")

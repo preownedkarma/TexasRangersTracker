@@ -11,8 +11,9 @@
   <a class="btn btn-sm btn-outline-secondary" href="?n=30">30</a>
 </nav>
 
-{% if runs_data|length == 0 or era_data|length == 0 or top5|length == 0 %}
-  <div class="alert alert-warning">Not enough data to build trends yet. Run sync and add more games.</div>
+{# ── Team charts ── only need game data #}
+{% if runs_data|length == 0 %}
+  <div class="alert alert-warning">No game data yet. Run sync to populate.</div>
 {% else %}
 <div class="row mb-4">
   <div class="col-12">
@@ -21,42 +22,116 @@
       <canvas id="runsChart" height="120"></canvas>
     </div>
   </div>
-
   <div class="col-12">
     <div class="card bg-dark border-secondary p-3 mb-3">
       <h5>Team ERA Per Game</h5>
       <canvas id="eraChart" height="120"></canvas>
     </div>
   </div>
+</div>
+{% endif %}
 
+{# ── Hot / Cold bar chart ── only if player delta data exists #}
+{% if top5|length > 0 or bottom5|length > 0 %}
+<div class="row mb-4">
   <div class="col-12">
     <div class="card bg-dark border-secondary p-3 mb-3">
-      <h5>Top 5 Players by Rolling AVG Delta (vs season)</h5>
-      <canvas id="top5Chart" height="120"></canvas>
-      <p class="text-muted mt-2">Positive delta means player is outperforming season average in last {{ trend_window }} games.</p>
+      <h5>Hot &amp; Cold Players — Rolling AVG Delta (last {{ trend_window }} games vs season)</h5>
+      <canvas id="hotColdChart" height="140"></canvas>
+      <p class="text-muted mt-2 small">Delta = rolling AVG minus full-season AVG. Green = above their season avg, Red = below.</p>
     </div>
   </div>
 </div>
 {% endif %}
 
-<h5>Bottom 5 (Cold) Players</h5>
-{% if bottom5|length == 0 %}
-  <div class="text-secondary">Not enough player data to determine bottom 5 yet.</div>
-{% else %}
-<table class="table table-sm table-bordered table-rangers">
-  <thead><tr><th>Player</th><th>Rolling AVG</th><th>Season AVG</th><th>Delta</th></tr></thead>
-  <tbody>
-  {% for p in bottom5 %}
-  <tr>
-    <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
-    <td>{{ "%.3f"|format(p.rolling_avg) }}</td>
-    <td>{{ "%.3f"|format(p.season_avg) }}</td>
-    <td class="{{ 'stat-good' if p.delta > 0 else 'stat-bad' if p.delta < 0 else ''}}">{{ "%+.3f"|format(p.delta) }}</td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+{# ── Hot 5 / Cold 5 tables side by side ── #}
+<div class="row mb-4">
+  <div class="col-md-6 mb-3">
+    <h5 class="text-success">&#x1F525; Top 5 Hot Hitters</h5>
+    {% if top5|length == 0 %}
+      <div class="text-secondary">Not enough player data yet.</div>
+    {% else %}
+    <div class="table-responsive">
+    <table class="table table-sm table-bordered table-rangers">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>H</th>
+          <th>RBI</th>
+          <th title="Rolling AVG / Season AVG">AVG (roll/ssn)</th>
+          <th title="Rolling AVG minus Season AVG">AVG Δ</th>
+          <th title="Rolling OBP / Season OBP">OBP (roll/ssn)</th>
+          <th title="OBP delta">OBP Δ</th>
+          <th title="Strikeout rate this window">K%</th>
+          <th title="BABIP this window">BABIP</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in top5 %}
+      <tr>
+        <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+        <td>{{ p.h }}</td>
+        <td>{{ p.rbi }}</td>
+        <td>{{ "%.3f"|format(p.rolling_avg) }} / {{ "%.3f"|format(p.season_avg) }}</td>
+        <td class="stat-good">{{ "%+.3f"|format(p.delta) }}</td>
+        <td>{{ "%.3f"|format(p.rolling_obp) }} / {{ "%.3f"|format(p.season_obp) }}</td>
+        <td class="{{ 'stat-good' if p.obp_delta > 0 else 'stat-bad' if p.obp_delta < 0 else '' }}">{{ "%+.3f"|format(p.obp_delta) }}</td>
+        <td>{{ p.k_pct }}</td>
+        <td>{{ p.babip }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-md-6 mb-3">
+    <h5 class="text-danger">&#x1F976; Bottom 5 Cold Hitters</h5>
+    {% if bottom5|length == 0 %}
+      <div class="text-secondary">Not enough player data yet.</div>
+    {% else %}
+    <div class="table-responsive">
+    <table class="table table-sm table-bordered table-rangers">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>H</th>
+          <th>RBI</th>
+          <th title="Rolling AVG / Season AVG">AVG (roll/ssn)</th>
+          <th title="Rolling AVG minus Season AVG">AVG Δ</th>
+          <th title="Rolling OBP / Season OBP">OBP (roll/ssn)</th>
+          <th title="OBP delta">OBP Δ</th>
+          <th title="Strikeout rate this window">K%</th>
+          <th title="BABIP this window">BABIP</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in bottom5 %}
+      <tr>
+        <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+        <td>{{ p.h }}</td>
+        <td>{{ p.rbi }}</td>
+        <td>{{ "%.3f"|format(p.rolling_avg) }} / {{ "%.3f"|format(p.season_avg) }}</td>
+        <td class="{{ 'stat-good' if p.delta > 0 else 'stat-bad' if p.delta < 0 else '' }}">{{ "%+.3f"|format(p.delta) }}</td>
+        <td>{{ "%.3f"|format(p.rolling_obp) }} / {{ "%.3f"|format(p.season_obp) }}</td>
+        <td class="{{ 'stat-good' if p.obp_delta > 0 else 'stat-bad' if p.obp_delta < 0 else '' }}">{{ "%+.3f"|format(p.obp_delta) }}</td>
+        <td class="{{ 'stat-bad' if p.k_delta > 0.05 else '' }}">{{ p.k_pct }}</td>
+        <td class="{{ 'stat-bad' if p.babip|float < 0.270 else '' }}">{{ p.babip }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<p class="text-muted small">
+  <strong>AVG/OBP Δ:</strong> rolling window minus full-season average &nbsp;|&nbsp;
+  <strong>K%:</strong> strikeout rate (higher = more contact trouble) &nbsp;|&nbsp;
+  <strong>BABIP &lt; .270:</strong> poor contact or bad luck
+</p>
 
 {% endblock %}
 
@@ -68,66 +143,71 @@ document.addEventListener('DOMContentLoaded', function() {
     return;
   }
 
-  const runsData = {{ runs_data|tojson }};
-  const eraData = {{ era_data|tojson }};
+  const runsData    = {{ runs_data|tojson }};
+  const eraData     = {{ era_data|tojson }};
   const trendWindow = {{ trend_window }};
-  const top5Data = {{ top5|tojson }};
+  const top5Data    = {{ top5|tojson }};
+  const bottom5Data = {{ bottom5|tojson }};
 
-  const runsLabels = runsData.map(x => x.date);
-  const runsValues = runsData.map(x => x.value);
-  const runsRolling = runsData.map(x => x.rolling);
-
-  const eraLabels = eraData.map(x => x.date);
-  const eraValues = eraData.map(x => x.value !== null ? x.value : null);
-  const eraRolling = eraData.map(x => x.rolling !== null ? x.rolling : null);
-
-  const top5Labels = top5Data.map(x => x.player_name);
-  const top5Values = top5Data.map(x => x.delta);
-
-  if (runsData.length && eraData.length && top5Data.length) {
+  // Runs chart — only needs game data
+  if (runsData.length) {
     new Chart(document.getElementById('runsChart'), {
       type: 'line',
       data: {
-        labels: runsLabels,
+        labels: runsData.map(x => x.date),
         datasets: [
-          { label: 'Runs/G', data: runsValues, borderColor: '#28a745', backgroundColor: 'rgba(40,167,69,0.2)', tension: 0.2 },
-          { label: `Rolling ${trendWindow}`, data: runsRolling, borderColor: '#17a2b8', backgroundColor: 'rgba(23,162,184,0.2)', tension: 0.2 },
+          { label: 'Runs/G',               data: runsData.map(x => x.value),   borderColor: '#28a745', backgroundColor: 'rgba(40,167,69,0.2)',   tension: 0.2 },
+          { label: `Rolling ${trendWindow}`, data: runsData.map(x => x.rolling), borderColor: '#17a2b8', backgroundColor: 'rgba(23,162,184,0.2)', tension: 0.2 },
         ]
       },
       options: { responsive: true, scales: { y: { beginAtZero: true } } }
     });
+  }
 
+  // ERA chart — only needs game data
+  if (eraData.length) {
     new Chart(document.getElementById('eraChart'), {
       type: 'line',
       data: {
-        labels: eraLabels,
+        labels: eraData.map(x => x.date),
         datasets: [
-          { label: 'ERA', data: eraValues, borderColor: '#ffc107', backgroundColor: 'rgba(255,193,7,0.2)', tension: 0.2 },
-          { label: `Rolling ${trendWindow}`, data: eraRolling, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.2)', tension: 0.2 },
+          { label: 'ERA',                   data: eraData.map(x => x.value   !== null ? x.value   : null), borderColor: '#ffc107', backgroundColor: 'rgba(255,193,7,0.2)',  tension: 0.2 },
+          { label: `Rolling ${trendWindow}`, data: eraData.map(x => x.rolling !== null ? x.rolling : null), borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.2)', tension: 0.2 },
         ]
       },
       options: { responsive: true, scales: { y: { beginAtZero: true } } }
     });
+  }
 
-    new Chart(document.getElementById('top5Chart'), {
+  // Hot/Cold bar chart — combined top5 + bottom5
+  const hotColdEl = document.getElementById('hotColdChart');
+  if (hotColdEl && (top5Data.length || bottom5Data.length)) {
+    // Merge: top5 first (positive), then bottom5 (negative), dedup by player_id
+    const seen = new Set();
+    const combined = [];
+    for (const p of [...top5Data, ...bottom5Data]) {
+      if (!seen.has(p.player_id)) {
+        seen.add(p.player_id);
+        combined.push(p);
+      }
+    }
+    combined.sort((a, b) => b.delta - a.delta);
+
+    new Chart(hotColdEl, {
       type: 'bar',
       data: {
-        labels: top5Labels,
+        labels: combined.map(x => x.player_name),
         datasets: [{
-          label: 'Rolling Delta',
-          data: top5Values,
-          backgroundColor: top5Values.map(v => v >= 0 ? 'rgba(40,167,69,0.7)' : 'rgba(220,53,69,0.7)'),
-          borderColor: top5Values.map(v => v >= 0 ? 'rgba(40,167,69,1)' : 'rgba(220,53,69,1)'),
+          label: 'AVG Delta (rolling vs season)',
+          data: combined.map(x => x.delta),
+          backgroundColor: combined.map(v => v.delta >= 0 ? 'rgba(40,167,69,0.7)' : 'rgba(220,53,69,0.7)'),
+          borderColor:     combined.map(v => v.delta >= 0 ? 'rgba(40,167,69,1)'   : 'rgba(220,53,69,1)'),
           borderWidth: 1,
         }]
       },
       options: {
         responsive: true,
-        scales: {
-          y: {
-            beginAtZero: true,
-          }
-        }
+        scales: { y: { beginAtZero: false } }
       }
     });
   }

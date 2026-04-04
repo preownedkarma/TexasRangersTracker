@@ -48,6 +48,10 @@
           <a class="nav-link {% if request.path == '/season/trends' %}active{% endif %}"
              href="/season/trends">Trends</a>
         </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.path.startswith('/game') %}active{% endif %}"
+             href="/games">Games</a>
+        </li>
       </ul>
       <span class="navbar-text text-secondary me-3" style="font-size:0.78rem;">
         Texas Rangers &mdash; 2026 Regular Season

@@ -34,7 +34,50 @@ STADIUM_ROOF = {
     "Tropicana Field":       "Dome",
 }
 
+# Weather conditions that only occur outdoors (roof must be open)
+_OUTDOOR_CONDITIONS = {
+    "sunny", "partly cloudy", "cloudy", "overcast", "clear",
+    "drizzle", "rain", "fog", "hazy", "wind", "snow",
+}
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def infer_roof_status(roof_type, condition, wind):
+    """
+    Infer whether a retractable-roof stadium had its roof open or closed.
+
+    Returns one of:
+      "Closed"   — roof was shut (dome or strong signals)
+      "Open"     — roof was open (outdoor weather signals)
+      "Open Air" — stadium has no roof
+      "Unknown"  — retractable roof but insufficient data to determine
+    """
+    if roof_type == "Open Air":
+        return "Open Air"
+
+    if roof_type == "Dome":
+        return "Closed"
+
+    # Retractable Roof — use weather signals
+    cond_lower = (condition or "").lower().strip()
+    wind_lower = (wind      or "").lower().strip()
+
+    # Explicit MLB API signal
+    if "roof closed" in cond_lower:
+        return "Closed"
+    if "roof open" in cond_lower:
+        return "Open"
+
+    # Zero wind + "none" direction → strongly indicates enclosed environment
+    if "0 mph" in wind_lower and "none" in wind_lower:
+        return "Closed"
+
+    # Outdoor weather condition → roof must be open
+    if any(kw in cond_lower for kw in _OUTDOOR_CONDITIONS):
+        return "Open"
+
+    return "Unknown"
+
 
 def ip_to_outs(ip_str):
     """Convert '6.2' → 20 outs (6 full innings × 3 + 2)."""
@@ -291,6 +334,9 @@ def sync():
         w_temp  = weather.get("temp", "")
         w_wind  = weather.get("wind", "")
 
+        roof_status = infer_roof_status(roof, w_cond, w_wind)
+        print(f"    [roof] {venue} → {roof} → status: {roof_status}  (cond='{w_cond}', wind='{w_wind}')")
+
         # ── Boxscore ───────────────────────────────────────────────────────
         hitting, pitching = fetch_boxscore(game_pk, rangers_side)
         if hitting is None:
@@ -299,16 +345,17 @@ def sync():
 
         # ── Insert game ────────────────────────────────────────────────────
         db.insert_game(
-            game_pk   = game_pk,
-            date      = date_str,
-            opponent  = opponent,
-            result    = result,
-            score     = score,
+            game_pk      = game_pk,
+            date         = date_str,
+            opponent     = opponent,
+            result       = result,
+            score        = score,
             rangers_side = rangers_side,
-            venue     = venue,
-            roof      = roof,
-            day_night = day_night,
-            game_time = game_time,
+            venue        = venue,
+            roof         = roof,
+            roof_status  = roof_status,
+            day_night    = day_night,
+            game_time    = game_time,
             weather_condition = w_cond,
             weather_temp      = w_temp,
             weather_wind      = w_wind,

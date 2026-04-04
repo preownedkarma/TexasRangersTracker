@@ -31,12 +31,16 @@
       <th class="sortable" data-col="9">AVG</th>
       <th class="sortable" data-col="10">OBP</th>
       <th class="sortable" data-col="11">ISO</th>
+      <th class="sortable" data-col="12" title="Batting average vs left-handed pitchers (MLB API)">vs LHP</th>
+      <th class="sortable" data-col="13" title="Batting average vs right-handed pitchers (MLB API)">vs RHP</th>
     </tr>
   </thead>
   <tbody>
     {% for b in batters %}
-    {% set avg_f = b.avg_val %}
-    {% set obp_f = b.obp_val %}
+    {% set avg_f  = b.avg_val %}
+    {% set obp_f  = b.obp_val %}
+    {% set vl_f   = b.vl_avg | replace("—","0") | float %}
+    {% set vr_f   = b.vr_avg | replace("—","0") | float %}
     <tr>
       <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
       <td>{{ b.g }}</td>
@@ -54,6 +58,24 @@
         {{ b.obp }}
       </td>
       <td class="{% if b.iso_val >= 0.200 %}stat-good{% elif b.iso_val < 0.100 and b.ab >= 10 %}stat-bad{% endif %}">{{ b.iso }}</td>
+      <td class="{% if b.vl_ab >= 5 and vl_f >= 0.300 %}stat-good{% elif b.vl_ab >= 5 and vl_f < 0.200 %}stat-bad{% endif %}"
+          title="{% if b.vl_ab == 0 %}No PA vs LHP this season{% else %}{{ b.vl_h }}-for-{{ b.vl_ab }} vs LHP{% endif %}">
+        {% if b.vl_ab == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ b.vl_avg }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ b.vl_h }}/{{ b.vl_ab }}</span>
+        {% endif %}
+      </td>
+      <td class="{% if b.vr_ab >= 5 and vr_f >= 0.300 %}stat-good{% elif b.vr_ab >= 5 and vr_f < 0.200 %}stat-bad{% endif %}"
+          title="{% if b.vr_ab == 0 %}No PA vs RHP this season{% else %}{{ b.vr_h }}-for-{{ b.vr_ab }} vs RHP{% endif %}">
+        {% if b.vr_ab == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ b.vr_avg }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ b.vr_h }}/{{ b.vr_ab }}</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -62,7 +84,8 @@
 <p class="text-secondary mt-2" style="font-size:0.75rem;">
   {{ batters | length }} player{{ 's' if batters | length != 1 }} shown &mdash;
   <span class="stat-good">Blue</span> = AVG &ge; .300 / OBP &ge; .360 &nbsp;|&nbsp;
-  <span class="stat-bad">Red</span> = AVG &lt; .200 / OBP &lt; .280 (min 10 AB)
+  <span class="stat-bad">Red</span> = AVG &lt; .200 / OBP &lt; .280 (min 10 AB) &nbsp;|&nbsp;
+  <em>vs LHP / vs RHP from MLB Stats API (live season splits)</em>
 </p>
 
 {# ── Rolling 10-game table ────────────────────────────────────────────── #}
@@ -89,12 +112,16 @@
       <th class="sortable" data-col="9">AVG</th>
       <th class="sortable" data-col="10">OBP</th>
       <th class="sortable" data-col="11">ISO</th>
+      <th class="sortable" data-col="12" title="Season batting average vs left-handed pitchers">vs LHP</th>
+      <th class="sortable" data-col="13" title="Season batting average vs right-handed pitchers">vs RHP</th>
     </tr>
   </thead>
   <tbody>
     {% for b in rolling %}
     {% set avg_f = b.avg_val %}
     {% set obp_f = b.obp_val %}
+    {% set vl_f  = b.vl_avg | replace("—","0") | float %}
+    {% set vr_f  = b.vr_avg | replace("—","0") | float %}
     <tr>
       <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
       <td>{{ b.g }}</td>
@@ -112,6 +139,24 @@
         {{ b.obp }}
       </td>
       <td class="{% if b.iso_val >= 0.200 %}stat-good{% elif b.iso_val < 0.100 and b.ab >= 5 %}stat-bad{% endif %}">{{ b.iso }}</td>
+      <td class="{% if b.vl_ab >= 5 and vl_f >= 0.300 %}stat-good{% elif b.vl_ab >= 5 and vl_f < 0.200 %}stat-bad{% endif %}"
+          title="{% if b.vl_ab == 0 %}No PA vs LHP this season{% else %}{{ b.vl_h }}-for-{{ b.vl_ab }} vs LHP{% endif %}">
+        {% if b.vl_ab == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ b.vl_avg }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ b.vl_h }}/{{ b.vl_ab }}</span>
+        {% endif %}
+      </td>
+      <td class="{% if b.vr_ab >= 5 and vr_f >= 0.300 %}stat-good{% elif b.vr_ab >= 5 and vr_f < 0.200 %}stat-bad{% endif %}"
+          title="{% if b.vr_ab == 0 %}No PA vs RHP this season{% else %}{{ b.vr_h }}-for-{{ b.vr_ab }} vs RHP{% endif %}">
+        {% if b.vr_ab == 0 %}
+          <span class="text-secondary">—</span>
+        {% else %}
+          {{ b.vr_avg }}<br>
+          <span style="font-size:0.68rem; color:#6c757d;">{{ b.vr_h }}/{{ b.vr_ab }}</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -120,7 +165,8 @@
 <p class="text-secondary mt-2" style="font-size:0.75rem;">
   {{ rolling | length }} player{{ 's' if rolling | length != 1 }} shown &mdash;
   <span class="stat-good">Blue</span> = AVG &ge; .300 / OBP &ge; .360 &nbsp;|&nbsp;
-  <span class="stat-bad">Red</span> = AVG &lt; .200 / OBP &lt; .280 (min 5 AB)
+  <span class="stat-bad">Red</span> = AVG &lt; .200 / OBP &lt; .280 (min 5 AB) &nbsp;|&nbsp;
+  <em>vs LHP / vs RHP are season totals from MLB Stats API</em>
 </p>
 {% endif %}
 
