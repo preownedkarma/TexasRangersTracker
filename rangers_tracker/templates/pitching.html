@@ -1,11 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Season Pitching{% endblock %}
 
+{% block head_extra %}
+<style>
+  .role-sp  { font-size:0.62rem; font-weight:700; padding:1px 4px; border-radius:3px; background:#1a3a6e; color:#7cb3ff; margin-left:4px; vertical-align:middle; }
+  .role-rp  { font-size:0.62rem; font-weight:700; padding:1px 4px; border-radius:3px; background:#2a2a1a; color:#c8b44a; margin-left:4px; vertical-align:middle; }
+  .role-cl  { font-size:0.62rem; font-weight:700; padding:1px 4px; border-radius:3px; background:#3a1a1a; color:#ff7c7c; margin-left:4px; vertical-align:middle; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="section-title mb-0">2026 Season Pitching</h4>
   <a href="/season" class="btn btn-sm btn-outline-secondary">&larr; Season Overview</a>
 </div>
+
+{% macro role_badge(p) %}
+  {% if p.role == 'SP' %}<span class="role-sp">SP</span>
+  {% elif p.role == 'CL' %}<span class="role-cl">CL</span>
+  {% else %}<span class="role-rp">RP</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro era_splits_cell(era, era_val, er, outs) %}
+<td class="{% if outs >= 9 and era_val <= 3.00 %}stat-good{% elif outs >= 9 and era_val >= 5.00 %}stat-bad{% elif outs >= 9 and era_val >= 4.00 %}stat-warn{% endif %}"
+    title="{% if outs == 0 %}No batters faced this season{% else %}{{ er }} ER in {{ '%d.%d' | format(outs // 3, outs % 3) }} IP{% endif %}">
+  {% if outs == 0 %}
+    <span class="text-secondary">—</span>
+  {% else %}
+    {{ era }}<br>
+    <span style="font-size:0.68rem; color:#6c757d;">{{ er }}ER/{{ '%d.%d' | format(outs // 3, outs % 3) }}IP</span>
+  {% endif %}
+</td>
+{% endmacro %}
 
 {% if not pitchers %}
   <div class="alert alert-warning">No pitching data yet. Run <code>python sync.py</code>.</div>
@@ -16,27 +43,31 @@
     <tr>
       <th>Name</th>
       <th class="sortable" data-col="1" title="Games">G</th>
-      <th class="sortable" data-col="2" title="Outs Pitched">OUTS</th>
-      <th class="sortable" data-col="3" title="Innings Pitched">IP</th>
-      <th class="sortable" data-col="4" title="Hits Allowed">H</th>
-      <th class="sortable" data-col="4" title="Earned Runs">ER</th>
-      <th class="sortable" data-col="5" title="Walks">BB</th>
-      <th class="sortable" data-col="6" title="Strikeouts">SO</th>
-      <th class="sortable" data-col="7" title="Earned Run Average">ERA</th>
-      <th class="sortable" data-col="8" title="Walks + Hits per Inning">WHIP</th>
-      <th class="sortable" data-col="10" title="Fielding Independent Pitching (est)">FIP*</th>
-      <th class="sortable" data-col="11" title="Strikeout-to-Walk Ratio">K/BB</th>
-      <th class="sortable" data-col="12" title="ERA vs right-handed batters (MLB API)">vs RHB</th>
-      <th class="sortable" data-col="13" title="ERA vs left-handed batters (MLB API)">vs LHB</th>
+      <th class="sortable" data-col="2" title="Games Started">GS</th>
+      <th class="sortable" data-col="3" title="Quality Starts">QS</th>
+      <th class="sortable" data-col="4" title="Outs Pitched">OUTS</th>
+      <th class="sortable" data-col="5" title="Innings Pitched">IP</th>
+      <th class="sortable" data-col="6" title="Hits Allowed">H</th>
+      <th class="sortable" data-col="7" title="Earned Runs">ER</th>
+      <th class="sortable" data-col="8" title="Walks">BB</th>
+      <th class="sortable" data-col="9" title="Strikeouts">SO</th>
+      <th class="sortable" data-col="10" title="Earned Run Average">ERA</th>
+      <th class="sortable" data-col="11" title="Walks + Hits per Inning">WHIP</th>
+      <th class="sortable" data-col="12" title="Fielding Independent Pitching (est)">FIP*</th>
+      <th class="sortable" data-col="13" title="Strikeout-to-Walk Ratio">K/BB</th>
+      <th class="sortable" data-col="14" title="ERA vs right-handed batters (MLB API)">vs RHB</th>
+      <th class="sortable" data-col="15" title="ERA vs left-handed batters (MLB API)">vs LHB</th>
     </tr>
   </thead>
   <tbody>
     {% for p in pitchers %}
     <tr>
       <td>
-        <a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a>
+        <a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a>{{ role_badge(p) }}
       </td>
       <td>{{ p.g }}</td>
+      <td>{{ p.gs }}</td>
+      <td class="{% if p.gs > 0 and p.qs / p.gs >= 0.6 %}stat-good{% elif p.gs > 0 and p.qs / p.gs < 0.3 %}stat-bad{% endif %}">{{ p.qs }}</td>
       <td>{{ p.outs }}</td>
       <td>{{ p.ip }}</td>
       <td>{{ p.h }}</td>
@@ -67,36 +98,30 @@
       </td>
       <td>{{ p.fip_est if p.fip_est is not none else '-' }}</td>
       <td>{{ p.kbb }}</td>
-      <td class="{% if p.vr_outs >= 9 and p.vr_era_val <= 3.00 %}stat-good{% elif p.vr_outs >= 9 and p.vr_era_val >= 5.00 %}stat-bad{% elif p.vr_outs >= 9 and p.vr_era_val >= 4.00 %}stat-warn{% endif %}"
-          title="{% if p.vr_outs == 0 %}No PA vs RHB this season{% else %}{{ p.vr_er }} ER in {{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }} IP vs RHB{% endif %}">
-        {% if p.vr_outs == 0 %}
-          <span class="text-secondary">—</span>
-        {% else %}
-          {{ p.vr_era }}<br>
-          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vr_er }}ER/{{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }}IP</span>
-        {% endif %}
-      </td>
-      <td class="{% if p.vl_outs >= 9 and p.vl_era_val <= 3.00 %}stat-good{% elif p.vl_outs >= 9 and p.vl_era_val >= 5.00 %}stat-bad{% elif p.vl_outs >= 9 and p.vl_era_val >= 4.00 %}stat-warn{% endif %}"
-          title="{% if p.vl_outs == 0 %}No PA vs LHB this season{% else %}{{ p.vl_er }} ER in {{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }} IP vs LHB{% endif %}">
-        {% if p.vl_outs == 0 %}
-          <span class="text-secondary">—</span>
-        {% else %}
-          {{ p.vl_era }}<br>
-          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vl_er }}ER/{{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }}IP</span>
-        {% endif %}
-      </td>
+      {{ era_splits_cell(p.vr_era, p.vr_era_val, p.vr_er, p.vr_outs) }}
+      {{ era_splits_cell(p.vl_era, p.vl_era_val, p.vl_er, p.vl_outs) }}
     </tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
+<p class="text-secondary mt-2" style="font-size:0.75rem;">
+  <span class="role-sp">SP</span> Starter &nbsp;|&nbsp;
+  <span class="role-cl">CL</span> Closer (&ge;3 SV) &nbsp;|&nbsp;
+  <span class="role-rp">RP</span> Reliever &nbsp;&mdash;&nbsp;
+  QS color: <span class="stat-good">Blue</span> &ge;60% &nbsp;|&nbsp; <span class="stat-bad">Red</span> &lt;30% (SP only) &nbsp;&mdash;&nbsp;
+  <span class="stat-good">Blue</span> ERA &le; 3.00 &nbsp;|&nbsp;
+  <span class="stat-warn">Yellow</span> ERA 4.00&ndash;4.99 &nbsp;|&nbsp;
+  <span class="stat-bad">Red</span> ERA &ge; 5.00
+</p>
+
 {# ── Rolling 10-game table ────────────────────────────────────────────── #}
 <h5 class="section-title mt-4">Last 10 Games — Pitching</h5>
 {% if not rolling %}
   <p class="text-secondary" style="font-size:0.82rem;">Not enough games yet.</p>
 {% else %}
 <p class="text-secondary" style="font-size:0.82rem;">
-  Stats from the most recent 10 team games. Sorted by IP.
+  Stats from the most recent 10 team games. Sorted by IP. vs RHB / vs LHB are season totals.
 </p>
 <div class="table-scroll">
 <table class="table table-sm table-bordered table-hover table-rangers align-middle" id="rollingTable">
@@ -104,25 +129,31 @@
     <tr>
       <th>Name</th>
       <th class="sortable" data-col="1" title="Games">G</th>
-      <th class="sortable" data-col="2" title="Outs Pitched">OUTS</th>
-      <th class="sortable" data-col="3" title="Innings Pitched">IP</th>
-      <th class="sortable" data-col="4" title="Hits Allowed">H</th>
-      <th class="sortable" data-col="5" title="Earned Runs">ER</th>
-      <th class="sortable" data-col="6" title="Walks">BB</th>
-      <th class="sortable" data-col="7" title="Strikeouts">SO</th>
-      <th class="sortable" data-col="8" title="Earned Run Average">ERA</th>
-      <th class="sortable" data-col="9" title="Walks + Hits per Inning">WHIP</th>
-      <th class="sortable" data-col="10" title="Fielding Independent Pitching (est)">FIP*</th>
-      <th class="sortable" data-col="11" title="Strikeout-to-Walk Ratio">K/BB</th>
-      <th class="sortable" data-col="12" title="Season ERA vs right-handed batters">vs RHB</th>
-      <th class="sortable" data-col="13" title="Season ERA vs left-handed batters">vs LHB</th>
+      <th class="sortable" data-col="2" title="Games Started">GS</th>
+      <th class="sortable" data-col="3" title="Quality Starts">QS</th>
+      <th class="sortable" data-col="4" title="Outs Pitched">OUTS</th>
+      <th class="sortable" data-col="5" title="Innings Pitched">IP</th>
+      <th class="sortable" data-col="6" title="Hits Allowed">H</th>
+      <th class="sortable" data-col="7" title="Earned Runs">ER</th>
+      <th class="sortable" data-col="8" title="Walks">BB</th>
+      <th class="sortable" data-col="9" title="Strikeouts">SO</th>
+      <th class="sortable" data-col="10" title="Earned Run Average">ERA</th>
+      <th class="sortable" data-col="11" title="Walks + Hits per Inning">WHIP</th>
+      <th class="sortable" data-col="12" title="Fielding Independent Pitching (est)">FIP*</th>
+      <th class="sortable" data-col="13" title="Strikeout-to-Walk Ratio">K/BB</th>
+      <th class="sortable" data-col="14" title="Season ERA vs right-handed batters">vs RHB</th>
+      <th class="sortable" data-col="15" title="Season ERA vs left-handed batters">vs LHB</th>
     </tr>
   </thead>
   <tbody>
     {% for p in rolling %}
     <tr>
-      <td><a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a></td>
+      <td>
+        <a href="/player/{{ p.player_id }}" class="player-link">{{ p.player_name }}</a>{{ role_badge(p) }}
+      </td>
       <td>{{ p.g }}</td>
+      <td>{{ p.gs }}</td>
+      <td class="{% if p.gs > 0 and p.qs / p.gs >= 0.6 %}stat-good{% elif p.gs > 0 and p.qs / p.gs < 0.3 %}stat-bad{% endif %}">{{ p.qs }}</td>
       <td>{{ p.outs }}</td>
       <td>{{ p.ip }}</td>
       <td>{{ p.h }}</td>
@@ -153,24 +184,8 @@
       </td>
       <td>{{ p.fip_est if p.fip_est is not none else '-' }}</td>
       <td>{{ p.kbb }}</td>
-      <td class="{% if p.vr_outs >= 9 and p.vr_era_val <= 3.00 %}stat-good{% elif p.vr_outs >= 9 and p.vr_era_val >= 5.00 %}stat-bad{% elif p.vr_outs >= 9 and p.vr_era_val >= 4.00 %}stat-warn{% endif %}"
-          title="{% if p.vr_outs == 0 %}No PA vs RHB this season{% else %}{{ p.vr_er }} ER in {{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }} IP vs RHB{% endif %}">
-        {% if p.vr_outs == 0 %}
-          <span class="text-secondary">—</span>
-        {% else %}
-          {{ p.vr_era }}<br>
-          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vr_er }}ER/{{ '%d.%d' | format(p.vr_outs // 3, p.vr_outs % 3) }}IP</span>
-        {% endif %}
-      </td>
-      <td class="{% if p.vl_outs >= 9 and p.vl_era_val <= 3.00 %}stat-good{% elif p.vl_outs >= 9 and p.vl_era_val >= 5.00 %}stat-bad{% elif p.vl_outs >= 9 and p.vl_era_val >= 4.00 %}stat-warn{% endif %}"
-          title="{% if p.vl_outs == 0 %}No PA vs LHB this season{% else %}{{ p.vl_er }} ER in {{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }} IP vs LHB{% endif %}">
-        {% if p.vl_outs == 0 %}
-          <span class="text-secondary">—</span>
-        {% else %}
-          {{ p.vl_era }}<br>
-          <span style="font-size:0.68rem; color:#6c757d;">{{ p.vl_er }}ER/{{ '%d.%d' | format(p.vl_outs // 3, p.vl_outs % 3) }}IP</span>
-        {% endif %}
-      </td>
+      {{ era_splits_cell(p.vr_era, p.vr_era_val, p.vr_er, p.vr_outs) }}
+      {{ era_splits_cell(p.vl_era, p.vl_era_val, p.vl_er, p.vl_outs) }}
     </tr>
     {% endfor %}
   </tbody>
@@ -181,7 +196,7 @@
   <span class="stat-good">Blue</span> = ERA &le; 3.00 / WHIP &le; 1.20 &nbsp;|&nbsp;
   <span class="stat-warn">Yellow</span> = ERA 4.00&ndash;4.99 / WHIP 1.40&ndash;1.59 &nbsp;|&nbsp;
   <span class="stat-bad">Red</span> = ERA &ge; 5.00 / WHIP &ge; 1.60 &nbsp;|&nbsp;
-  <em>vs RHB / vs LHB are season totals from MLB Stats API (min 3 IP for color)</em>
+  <em>vs RHB / vs LHB season totals from MLB Stats API (min 3 IP for color)</em>
 </p>
 {% endif %}
 

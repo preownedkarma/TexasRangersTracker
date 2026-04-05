@@ -2,28 +2,50 @@
 {% set g = box.game %}
 {% block title %}{{ g.date }} vs {{ g.opponent }}{% endblock %}
 
+{% block head_extra %}
+<style>
+  .linescore-table th, .linescore-table td {
+    text-align: center;
+    min-width: 28px;
+    padding: 4px 5px;
+    font-size: 0.82rem;
+  }
+  .linescore-table .ls-team { text-align: left; font-weight: 700; min-width: 48px; padding-left: 6px; }
+  .linescore-table .ls-total { font-weight: 700; background: #0d1f3c; }
+  .linescore-table .ls-x { color: #6c757d; }
+  .linescore-table .ls-score { font-size: 1rem; font-weight: 700; }
+  .linescore-table thead th { background: #071428; color: #8899bb; font-weight: 600; }
+  .inn-active { background: #0f2040 !important; }
+</style>
+{% endblock %}
+
 {% block content %}
 
 {# ── Back link ── #}
-<a href="/games" class="btn btn-sm btn-outline-secondary mb-3">&larr; Game Archive</a>
+<div class="d-flex gap-2 mb-3">
+  <a href="/games" class="btn btn-sm btn-outline-secondary">&larr; Game Archive</a>
+  <a href="/" class="btn btn-sm btn-outline-secondary">Series</a>
+</div>
 
 {# ── Game header ── #}
-<div class="card bg-dark border-secondary p-3 mb-4">
+<div class="card bg-dark border-secondary p-3 mb-3">
   <div class="d-flex flex-wrap align-items-center gap-3">
     <div>
       <div style="font-size:0.72rem; color:#8899bb; text-transform:uppercase; letter-spacing:0.08em;">
-        Game &mdash; {{ g.date }}
+        {{ g.day_night }} Game &mdash; {{ g.date }}
+        {% if g.game_time %}&mdash; {{ g.game_time }}{% endif %}
       </div>
       <div style="font-size:1.4rem; font-weight:700; color:#cdd9f0;">
         TEX vs {{ g.opponent }}
       </div>
       <div style="font-size:0.9rem; color:#8899bb;">
         {{ 'Home' if g.rangers_side == 'home' else 'Away' }}
-        {% if g.game_time %}&mdash; {{ g.game_time }}{% endif %}
-        {% if g.day_night %}&mdash; {{ g.day_night }} Game{% endif %}
+        {% if g.venue %}&mdash; {{ g.venue }}{% endif %}
+        {% if g.roof_status == 'Closed' %}&mdash; &#x1F3DB; Roof Closed
+        {% elif g.roof_status == 'Open' %}&mdash; &#x2600;&#xFE0F; Roof Open
+        {% endif %}
       </div>
     </div>
-
     <div class="ms-auto text-end">
       {% if g.result == 'W' %}
         <span class="result-w" style="font-size:2rem;">W</span>
@@ -34,26 +56,88 @@
     </div>
   </div>
 
-  <hr style="border-color:#1e3a6e; margin: 0.6rem 0;">
-
-  <div style="font-size:0.8rem; color:#8899bb;" class="d-flex flex-wrap gap-3">
-    {% if g.venue %}
-    <span><strong style="color:#aab4d0;">Venue:</strong> {{ g.venue }}
-      {% if g.roof_status == 'Closed' %}&#x1F3DB; Roof Closed
-      {% elif g.roof_status == 'Open' %}&#x2600;&#xFE0F; Roof Open
-      {% elif g.roof and g.roof != 'Open Air' %}({{ g.roof }})
-      {% endif %}
-    </span>
-    {% endif %}
-    {% if g.weather_condition and g.roof_status != 'Closed' %}
-    <span><strong style="color:#aab4d0;">Weather:</strong>
-      {{ g.weather_condition }}{% if g.weather_temp %}, {{ g.weather_temp }}&deg;F{% endif %}{% if g.weather_wind %} &mdash; {{ g.weather_wind }}{% endif %}
-    </span>
-    {% endif %}
+  {% if g.weather_condition and g.roof_status != 'Closed' %}
+  <hr style="border-color:#1e3a6e; margin:0.5rem 0;">
+  <div style="font-size:0.78rem; color:#8899bb;">
+    &#x1F321; {{ g.weather_condition }}{% if g.weather_temp %}, {{ g.weather_temp }}&deg;F{% endif %}
+    {% if g.weather_wind %}&mdash; {{ g.weather_wind }}{% endif %}
   </div>
+  {% endif %}
 </div>
 
-{# ── Team line ── #}
+{# ── Line Score ── #}
+{% if linescore %}
+<h5 class="section-title">Line Score</h5>
+<div class="table-responsive mb-4">
+<table class="table table-sm table-bordered table-rangers linescore-table align-middle mb-0">
+  <thead>
+    <tr>
+      <th class="ls-team"></th>
+      {% for inn in linescore.innings %}
+        <th>{{ inn.num }}</th>
+      {% endfor %}
+      {# Extra columns if < 9 innings shown #}
+      {% for i in range(linescore.innings | length, 9) %}
+        <th style="color:#6c757d;">{{ i + 1 }}</th>
+      {% endfor %}
+      <th class="ls-total">R</th>
+      <th class="ls-total">H</th>
+      <th class="ls-total">E</th>
+    </tr>
+  </thead>
+  <tbody>
+    {# Away row #}
+    {% set away_label = linescore.opp_label if g.rangers_side == 'home' else linescore.tex_label %}
+    {% set home_label = linescore.tex_label if g.rangers_side == 'home' else linescore.opp_label %}
+    <tr>
+      <td class="ls-team">{{ away_label }}</td>
+      {% for inn in linescore.innings %}
+        {% set val = inn.opp if g.rangers_side == 'home' else inn.tex %}
+        <td class="{% if val is none %}ls-x{% endif %}">
+          {% if val is none %}x{% else %}{{ val }}{% endif %}
+        </td>
+      {% endfor %}
+      {% for i in range(linescore.innings | length, 9) %}
+        <td class="ls-x" style="color:#333;">-</td>
+      {% endfor %}
+      {% if g.rangers_side == 'home' %}
+        <td class="ls-total ls-score">{{ linescore.opp_runs }}</td>
+        <td class="ls-total">{{ linescore.opp_hits }}</td>
+        <td class="ls-total">{{ linescore.opp_errors }}</td>
+      {% else %}
+        <td class="ls-total ls-score">{{ linescore.tex_runs }}</td>
+        <td class="ls-total">{{ linescore.tex_hits }}</td>
+        <td class="ls-total">{{ linescore.tex_errors }}</td>
+      {% endif %}
+    </tr>
+    {# Home row #}
+    <tr>
+      <td class="ls-team">{{ home_label }}</td>
+      {% for inn in linescore.innings %}
+        {% set val = inn.tex if g.rangers_side == 'home' else inn.opp %}
+        <td class="{% if val is none %}ls-x{% endif %}">
+          {% if val is none %}x{% else %}{{ val }}{% endif %}
+        </td>
+      {% endfor %}
+      {% for i in range(linescore.innings | length, 9) %}
+        <td class="ls-x" style="color:#333;">-</td>
+      {% endfor %}
+      {% if g.rangers_side == 'home' %}
+        <td class="ls-total ls-score">{{ linescore.tex_runs }}</td>
+        <td class="ls-total">{{ linescore.tex_hits }}</td>
+        <td class="ls-total">{{ linescore.tex_errors }}</td>
+      {% else %}
+        <td class="ls-total ls-score">{{ linescore.opp_runs }}</td>
+        <td class="ls-total">{{ linescore.opp_hits }}</td>
+        <td class="ls-total">{{ linescore.opp_errors }}</td>
+      {% endif %}
+    </tr>
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{# ── Team stat tiles ── #}
 <div class="row g-3 mb-4">
   <div class="col-auto">
     <div class="card bg-dark border-secondary p-2 text-center" style="min-width:70px;">
@@ -109,7 +193,7 @@
 
 {# ── Batting box score ── #}
 <h5 class="section-title">Batting</h5>
-{% if box.batters|length == 0 %}
+{% if box.batters | length == 0 %}
   <div class="text-secondary mb-4">No batting data.</div>
 {% else %}
 <div class="table-responsive mb-4">
@@ -163,7 +247,7 @@
 
 {# ── Pitching box score ── #}
 <h5 class="section-title">Pitching</h5>
-{% if box.pitchers|length == 0 %}
+{% if box.pitchers | length == 0 %}
   <div class="text-secondary mb-4">No pitching data.</div>
 {% else %}
 <div class="table-responsive mb-4">

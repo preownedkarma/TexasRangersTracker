@@ -20,8 +20,9 @@ from flask import Flask, render_template, abort, redirect, url_for, flash, reque
 import db
 import sync as sync_module
 
-RANGERS_ID  = 140
-SEASON_YEAR = 2026
+RANGERS_ID       = 140
+SEASON_YEAR      = 2026
+ESPN_RANGERS_ID  = 13    # ESPN team ID for the Texas Rangers
 
 # Lat/lon for every current MLB stadium — used for Open-Meteo weather forecasts
 STADIUM_COORDS = {
@@ -288,6 +289,49 @@ def get_game_archive():
     return result
 
 
+def fetch_linescore(game_pk: int, rangers_side: str, opponent: str) -> dict | None:
+    """
+    Fetch inning-by-inning linescore from MLB Stats API.
+    Returns dict with keys: innings, tex_runs/hits/errors, opp_runs/hits/errors,
+    tex_label, opp_label.  Returns None on failure.
+    """
+    url = f"https://statsapi.mlb.com/api/v1/game/{game_pk}/linescore"
+    try:
+        r = _requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        opp_side = "away" if rangers_side == "home" else "home"
+        teams    = data.get("teams", {})
+        tex_team = teams.get(rangers_side, {})
+        opp_team = teams.get(opp_side,     {})
+
+        # Build per-inning list: {num, tex, opp}  (None = not yet played / X)
+        innings = []
+        for inn in data.get("innings", []):
+            tex_r = inn.get(rangers_side, {}).get("runs")
+            opp_r = inn.get(opp_side,     {}).get("runs")
+            innings.append({
+                "num":  inn.get("num", len(innings) + 1),
+                "tex":  tex_r,   # None means 'x' (walk-off)
+                "opp":  opp_r,
+            })
+
+        return {
+            "innings":    innings,
+            "tex_runs":   tex_team.get("runs",   0),
+            "tex_hits":   tex_team.get("hits",   0),
+            "tex_errors": tex_team.get("errors", 0),
+            "opp_runs":   opp_team.get("runs",   0),
+            "opp_hits":   opp_team.get("hits",   0),
+            "opp_errors": opp_team.get("errors", 0),
+            "tex_label":  "TEX",
+            "opp_label":  opponent[:3].upper() if opponent else "OPP",
+        }
+    except Exception:
+        return None
+
+
 def get_game_box_score(game_pk):
     """
     Return full box score for a single game:
@@ -517,16 +561,24 @@ def get_series_data():
     # Build cumulative pitcher totals
     player_pit_totals = {}
     for g in series_games:
-        for p in get_pitcher_lines_for_game(g["game_pk"]):
+        pitchers_this_game = get_pitcher_lines_for_game(g["game_pk"])
+        # The first pitcher in each game is the starter
+        starter_pid = pitchers_this_game[0]["player_id"] if pitchers_this_game else None
+        for p in pitchers_this_game:
             pid = p["player_id"]
             if pid not in player_pit_totals:
                 player_pit_totals[pid] = {
                     "player_id": pid, "player_name": p["player_name"],
                     "outs": 0, "h": 0, "er": 0, "bb": 0, "so": 0,
+                    "gs": 0, "qs": 0,
                 }
             player_pit_totals[pid]["outs"] += ip_to_outs(p["ip_str"])
             for k in ("h", "er", "bb", "so"):
                 player_pit_totals[pid][k] += p[k]
+            if pid == starter_pid:
+                player_pit_totals[pid]["gs"] += 1
+            if qs_flag(p["ip_str"], p["er"]) == "YES":
+                player_pit_totals[pid]["qs"] += 1
 
     cum_pitchers = sorted(player_pit_totals.values(), key=lambda x: x["outs"], reverse=True)
     for p in cum_pitchers:
@@ -784,7 +836,8 @@ def get_rolling_pitching(n=10):
             SUM(pl.er)  AS er,
             SUM(pl.bb)  AS bb,
             SUM(pl.so)  AS so,
-            GROUP_CONCAT(pl.ip_str) AS ip_list
+            GROUP_CONCAT(pl.ip_str, '|') AS ip_list,
+            GROUP_CONCAT(pl.er,     '|') AS er_list
         FROM pitcher_lines pl
         JOIN games g ON g.game_pk = pl.game_pk
         WHERE g.date >= ?
@@ -796,7 +849,10 @@ def get_rolling_pitching(n=10):
 
     result = []
     for r in rows:
-        outs = sum(ip_to_outs(x) for x in (r["ip_list"] or "").split(","))
+        ip_parts = (r["ip_list"] or "").split("|")
+        er_parts = [(int(x) if x else 0) for x in (r["er_list"] or "").split("|")]
+        outs     = sum(ip_to_outs(x) for x in ip_parts)
+        qs_count = sum(1 for ip, er in zip(ip_parts, er_parts) if qs_flag(ip, er) == "YES")
         era  = era_str(r["er"], outs)
         whip = whip_str(r["h"], r["bb"], outs)
         kbb  = kbb_str(r["so"], r["bb"])
@@ -806,16 +862,18 @@ def get_rolling_pitching(n=10):
         result.append({
             "player_id":   r["player_id"],
             "player_name": r["player_name"],
-            "g":    r["g"],
-            "outs": outs,
-            "ip":   outs_to_ip(outs),
-            "h":    r["h"],
-            "er":   r["er"],
-            "bb":   r["bb"],
-            "so":   r["so"],
-            "era":  era,
-            "whip": whip,
-            "kbb":  kbb,
+            "g":       r["g"],
+            "outs":    outs,
+            "ip":      outs_to_ip(outs),
+            "h":       r["h"],
+            "er":      r["er"],
+            "bb":      r["bb"],
+            "so":      r["so"],
+            "qs":      qs_count,
+            "gs":      0,
+            "era":     era,
+            "whip":    whip,
+            "kbb":     kbb,
             "fip_est": fip_est,
             "era_val":  float(era)  if era  != "-.--" else 99.0,
             "whip_val": float(whip) if whip != "-.--" else 99.0,
@@ -841,7 +899,8 @@ def get_season_pitching():
             SUM(er)  AS er,
             SUM(bb)  AS bb,
             SUM(so)  AS so,
-            GROUP_CONCAT(ip_str) AS ip_list
+            GROUP_CONCAT(ip_str, '|') AS ip_list,
+            GROUP_CONCAT(er,     '|') AS er_list
         FROM pitcher_lines
         GROUP BY player_id
         """
@@ -850,7 +909,10 @@ def get_season_pitching():
 
     result = []
     for r in rows:
-        outs = sum(ip_to_outs(x) for x in (r["ip_list"] or "").split(","))
+        ip_parts = (r["ip_list"] or "").split("|")
+        er_parts = [(int(x) if x else 0) for x in (r["er_list"] or "").split("|")]
+        outs     = sum(ip_to_outs(x) for x in ip_parts)
+        qs_count = sum(1 for ip, er in zip(ip_parts, er_parts) if qs_flag(ip, er) == "YES")
         era  = era_str(r["er"], outs)
         whip = whip_str(r["h"], r["bb"], outs)
         kbb  = kbb_str(r["so"], r["bb"])
@@ -860,16 +922,18 @@ def get_season_pitching():
         result.append({
             "player_id":   r["player_id"],
             "player_name": r["player_name"],
-            "g":    r["g"],
-            "outs": outs,
-            "ip":   outs_to_ip(outs),
-            "h":    r["h"],
-            "er":   r["er"],
-            "bb":   r["bb"],
-            "so":   r["so"],
-            "era":  era,
-            "whip": whip,
-            "kbb":  kbb,
+            "g":       r["g"],
+            "outs":    outs,
+            "ip":      outs_to_ip(outs),
+            "h":       r["h"],
+            "er":      r["er"],
+            "bb":      r["bb"],
+            "so":      r["so"],
+            "qs":      qs_count,
+            "gs":      0,   # filled in by season_pitching() from API
+            "era":     era,
+            "whip":    whip,
+            "kbb":     kbb,
             "fip_est": fip_est,
             "era_val":  float(era)  if era  != "-.--" else 99.0,
             "whip_val": float(whip) if whip != "-.--" else 99.0,
@@ -1237,34 +1301,96 @@ def fetch_team_ranks():
     return out
 
 
-def fetch_rangers_pitcher_season_stats():
+def _norm_name(name: str) -> str:
+    """Normalize a player name for fuzzy matching: lowercase, strip punctuation/spaces."""
+    import re
+    return re.sub(r"[^a-z]", "", name.lower())
+
+
+def fetch_espn_pitcher_roles() -> dict:
     """
-    Fetch per-player pitching stats from the MLB Stats API for the Rangers.
-    Returns dict keyed by player_id with saves, holds, gamesStarted.
+    Fetch pitcher role designations from ESPN's unofficial roster API.
+    Returns dict keyed by normalized player name → 'SP' or 'RP'.
+    ESPN returns position.abbreviation as 'SP' or 'RP' (not generic 'P').
     Falls back to empty dict on any failure.
     """
     url = (
+        f"https://site.api.espn.com/apis/site/v2/sports/baseball/mlb"
+        f"/teams/{ESPN_RANGERS_ID}/roster"
+    )
+    roles = {}
+    try:
+        r = _requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return roles
+        for group in r.json().get("athletes", []):
+            for athlete in group.get("items", []):
+                pos  = athlete.get("position", {}).get("abbreviation", "")
+                name = athlete.get("fullName", "")
+                if pos in ("SP", "RP") and name:
+                    roles[_norm_name(name)] = pos
+    except Exception:
+        pass
+    return roles
+
+
+def fetch_rangers_pitcher_season_stats():
+    """
+    Fetch per-player pitching stats + roster position for Rangers pitchers.
+    roster_role comes from ESPN's roster API (SP/RP) matched by player name,
+    falling back to the MLB depth chart if ESPN is unavailable.
+    Returns dict keyed by player_id with saves, holds, games_started, roster_role.
+    Falls back to empty dict on any failure.
+    """
+    stats_url = (
         f"https://statsapi.mlb.com/api/v1/stats"
         f"?stats=season&group=pitching&teamId={RANGERS_ID}&season={SEASON_YEAR}&sportId=1"
     )
+    # ── 1. ESPN roster roles (primary source) ─────────────────────────────
+    espn_roles = fetch_espn_pitcher_roles()   # norm_name → 'SP'|'RP'
+
+    # ── 2. MLB depth chart roles (fallback if ESPN unavailable) ───────────
+    mlb_roles: dict[int, str] = {}
+    if not espn_roles:
+        roster_url = (
+            f"https://statsapi.mlb.com/api/v1/teams/{RANGERS_ID}/roster"
+            f"?rosterType=depthChart&season={SEASON_YEAR}"
+        )
+        try:
+            r2 = _requests.get(roster_url, timeout=15)
+            if r2.status_code == 200:
+                for entry in r2.json().get("roster", []):
+                    pid  = entry.get("person", {}).get("id")
+                    code = entry.get("position", {}).get("code", "")
+                    if pid and code == "S":
+                        mlb_roles[pid] = "SP"
+        except Exception:
+            pass
+
+    # ── 3. Season stats (saves, holds, gamesStarted) ──────────────────────
+    result = {}
     try:
-        r = _requests.get(url, timeout=15)
-        if r.status_code != 200:
-            return {}
-        splits = r.json().get("stats", [{}])[0].get("splits", [])
-        result = {}
-        for s in splits:
-            pid  = s.get("player", {}).get("id")
-            stat = s.get("stat", {})
-            if pid:
+        r = _requests.get(stats_url, timeout=15)
+        if r.status_code == 200:
+            for s in r.json().get("stats", [{}])[0].get("splits", []):
+                pid   = s.get("player", {}).get("id")
+                pname = s.get("player", {}).get("fullName", "")
+                stat  = s.get("stat", {})
+                if not pid:
+                    continue
+                # Resolve role: ESPN by name → MLB depth chart → default RP
+                norm  = _norm_name(pname)
+                role  = espn_roles.get(norm) or mlb_roles.get(pid, "RP")
                 result[pid] = {
                     "saves":         int(stat.get("saves",        0) or 0),
                     "holds":         int(stat.get("holds",        0) or 0),
                     "games_started": int(stat.get("gamesStarted", 0) or 0),
+                    "roster_role":   role,
                 }
-        return result
     except Exception:
-        return {}
+        pass
+
+    return result
 
 
 def get_season_overview():
@@ -1311,17 +1437,20 @@ def get_season_overview():
         api = api_stats.get(p["player_id"], {})
         p["saves"]         = api.get("saves",         0)
         p["holds"]         = api.get("holds",         0)
-        p["games_started"] = api.get("games_started", 0)
+        p["gs"]            = api.get("games_started", 0)
+        p["roster_role"]   = api.get("roster_role",   "RP")
+        p["role"]          = _pitcher_role(p["roster_role"], p["saves"])
 
     MIN_SP_OUTS = 9   # at least 3 IP to qualify for ERA/WHIP leaderboard
-    starters  = [p for p in pitching if p.get("games_started", 0) > 0]
-    relievers = [p for p in pitching if p.get("games_started", 0) == 0 and p["g"] > 0]
+    starters  = [p for p in pitching if p["role"] == "SP"]
+    relievers = [p for p in pitching if p["role"] in ("RP", "CL") and p["g"] > 0]
 
     top_sp_era  = sorted([p for p in starters if p["outs"] >= MIN_SP_OUTS],
                          key=lambda x: x["era_val"])[:3]
     top_sp_k    = sorted(starters, key=lambda x: x["so"],  reverse=True)[:3]
     top_sp_whip = sorted([p for p in starters if p["outs"] >= MIN_SP_OUTS],
                          key=lambda x: x["whip_val"])[:3]
+    top_sp_qs   = sorted(starters, key=lambda x: x["qs"],  reverse=True)[:3]
     top_rp_sv   = sorted(relievers, key=lambda x: x["saves"], reverse=True)[:3]
     top_rp_hld  = sorted(relievers, key=lambda x: x["holds"], reverse=True)[:3]
 
@@ -1347,6 +1476,7 @@ def get_season_overview():
         "top_sp_era":   top_sp_era,
         "top_sp_k":     top_sp_k,
         "top_sp_whip":  top_sp_whip,
+        "top_sp_qs":    top_sp_qs,
         "top_rp_sv":    top_rp_sv,
         "top_rp_hld":   top_rp_hld,
     }
@@ -1533,9 +1663,18 @@ _splits_cache: dict = {"data": {}, "ts": 0.0}
 _splits_lock = threading.Lock()
 _SPLITS_TTL  = 900   # seconds
 
-# Pitching splits cache (ERA vs LHB / RHB)
+# Pitching splits cache (ERA vs LHB / RHB) — ts=0 forces fresh fetch on first load
 _p_splits_cache: dict = {"data": {}, "ts": 0.0}
 _p_splits_lock = threading.Lock()
+
+
+def _pitcher_role(roster_role: str, saves: int) -> str:
+    """Derive SP / CL / RP from MLB depth chart position + saves."""
+    if roster_role == "SP":
+        return "SP"
+    if saves >= 3:
+        return "CL"
+    return "RP"
 
 
 def _fetch_splits_for_player(pid):
@@ -1604,7 +1743,8 @@ def fetch_batting_splits():
 
 
 def _fetch_pitching_splits_for_player(pid):
-    """Fetch vl/vr pitching splits for a single pitcher. Returns (pid, {vl:[er,outs], vr:[er,outs]})."""
+    """Fetch vl/vr pitching splits for a single pitcher. Returns (pid, {vl:[er,outs], vr:[er,outs]}).
+    MLB API returns inningsPitched as a string (e.g. '3.2'), not an outs integer."""
     url = (
         f"https://statsapi.mlb.com/api/v1/people/{pid}/stats"
         f"?stats=statSplits&group=pitching&season={SEASON_YEAR}&sitCodes=vl,vr&sportId=1"
@@ -1621,13 +1761,15 @@ def _fetch_pitching_splits_for_player(pid):
                     continue
                 stat = s.get("stat", {})
                 raw[code][0] += int(stat.get("earnedRuns", 0) or 0)
-                raw[code][1] += int(stat.get("outs",       0) or 0)
+                # API returns inningsPitched as "3.2" string, not an outs integer
+                ip_str = stat.get("inningsPitched", "0") or "0"
+                raw[code][1] += ip_to_outs(str(ip_str))
     except Exception:
         pass
     return pid, raw
 
 
-def fetch_pitching_splits():
+def fetch_pitching_splits(force_refresh: bool = False):
     """
     Fetch ERA vs LHB / vs RHB splits for every pitcher in the local DB.
     Uses per-player API calls with group=pitching. Cached for 15 minutes.
@@ -1635,7 +1777,7 @@ def fetch_pitching_splits():
     Returns: { player_id: { vl_era, vl_er, vl_outs, vr_era, vr_er, vr_outs } }
     """
     with _p_splits_lock:
-        if time.time() - _p_splits_cache["ts"] < _SPLITS_TTL and _p_splits_cache["data"]:
+        if not force_refresh and time.time() - _p_splits_cache["ts"] < _SPLITS_TTL and _p_splits_cache["data"]:
             return _p_splits_cache["data"]
 
     conn = db.get_conn()
@@ -1694,7 +1836,10 @@ def season_pitching():
         n = 10
     pitchers = get_season_pitching()
     rolling  = get_rolling_pitching(n)
-    p_splits = fetch_pitching_splits()
+    p_splits  = fetch_pitching_splits()
+    api_stats = fetch_rangers_pitcher_season_stats()
+
+    # Merge splits + role into both lists
     for lst in (pitchers, rolling):
         for p in lst:
             sp = p_splits.get(p["player_id"], {})
@@ -1706,6 +1851,14 @@ def season_pitching():
             p["vr_era_val"] = sp.get("vr_era_val", 99.0)
             p["vr_er"]      = sp.get("vr_er",      0)
             p["vr_outs"]    = sp.get("vr_outs",    0)
+            api  = api_stats.get(p["player_id"], {})
+            sv   = api.get("saves", 0)
+            p["saves"]         = sv
+            p["holds"]         = api.get("holds",         0)
+            p["gs"]            = api.get("games_started", 0)
+            p["roster_role"]   = api.get("roster_role",   "RP")
+            p["role"]          = _pitcher_role(p["roster_role"], sv)
+
     return render_template("pitching.html", pitchers=pitchers, rolling=rolling, rolling_window=n)
 
 
@@ -1776,6 +1929,21 @@ def season_trends():
     top5    = adv[:5]
     bottom5 = adv[-5:][::-1]   # 5 most negative deltas, worst first
 
+    # Per-game box scores for the accordion (newest first)
+    game_boxes = []
+    for g in reversed(games):
+        pitchers = get_pitcher_lines_for_game(g["game_pk"])
+        pit_ids  = {p["player_id"] for p in pitchers}
+        batters  = [b for b in get_batter_lines_for_game(g["game_pk"])
+                    if b["player_id"] not in pit_ids]
+        for b in batters:
+            b["avg"] = fmt_avg(safe_avg(b["h"], b["ab"]))
+        for p in pitchers:
+            p_outs   = ip_to_outs(p["ip_str"])
+            p["whip"] = whip_str(p["h"], p["bb"], p_outs)
+            p["qs"]   = qs_flag(p["ip_str"], p["er"])
+        game_boxes.append({**g, "batters": batters, "pitchers": pitchers})
+
     return render_template(
         "season_trends.html",
         runs_data=runs_data,
@@ -1783,6 +1951,7 @@ def season_trends():
         top5=top5,
         bottom5=bottom5,
         trend_window=n,
+        game_boxes=game_boxes,
     )
 
 
@@ -1799,7 +1968,9 @@ def game_detail(game_pk):
     data = get_game_box_score(game_pk)
     if data is None:
         abort(404)
-    return render_template("game_detail.html", box=data)
+    g = data["game"]
+    linescore = fetch_linescore(game_pk, g["rangers_side"], g["opponent"])
+    return render_template("game_detail.html", box=data, linescore=linescore)
 
 
 @app.route("/player/<int:player_id>")
@@ -1843,12 +2014,184 @@ def debug_next_series():
         return {"error": traceback.format_exc()}
 
 
+def backfill_weather():
+    """
+    Fetch weather from the MLB live feed for any games where weather_condition
+    is NULL or empty. Called automatically after each sync.
+    """
+    conn = db.get_conn()
+    rows = conn.execute(
+        "SELECT game_pk, roof FROM games "
+        "WHERE weather_condition IS NULL OR weather_condition = ''"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return 0
+
+    updated = 0
+    for row in rows:
+        game_pk = row["game_pk"]
+        roof    = row["roof"] or "Open Air"
+        weather = sync_module.fetch_weather(game_pk)
+        if not weather:
+            continue
+        w_cond = weather.get("condition", "")
+        w_temp = weather.get("temp",      "")
+        w_wind = weather.get("wind",      "")
+        roof_status = sync_module.infer_roof_status(roof, w_cond, w_wind)
+        conn = db.get_conn()
+        conn.execute(
+            "UPDATE games SET weather_condition=?, weather_temp=?, weather_wind=?, "
+            "roof_status=? WHERE game_pk=?",
+            (w_cond, w_temp, w_wind, roof_status, game_pk),
+        )
+        conn.commit()
+        conn.close()
+        updated += 1
+
+    return updated
+
+
+def fetch_playoff_picture() -> dict:
+    """
+    Fetch full MLB standings and build a playoff picture for both leagues.
+
+    Returns:
+    {
+      "al": {
+        "divisions": [
+          { "name": "AL West", "teams": [ {team record dict}, ... ] },
+          ...
+        ],
+        "wildcard": [ {team record dict}, ... ],   # top-6 non-div-winners sorted by pct
+        "playoff_teams": [ team_id, ... ]          # 6 AL teams currently in
+      },
+      "nl": { same structure },
+      "rangers_id": 140,
+      "last_updated": "2026-04-05T01:59:05Z"
+    }
+    """
+    url = (
+        f"https://statsapi.mlb.com/api/v1/standings"
+        f"?leagueId=103,104&season={SEASON_YEAR}&standingsTypes=regularSeason"
+        f"&hydrate=team,division,league"
+    )
+    try:
+        r = _requests.get(url, timeout=15)
+        if r.status_code != 200:
+            return {}
+        records = r.json().get("records", [])
+    except Exception:
+        return {}
+
+    def _team_row(t: dict, div_winner: bool) -> dict:
+        w   = t.get("wins",   0)
+        l   = t.get("losses", 0)
+        gb  = t.get("gamesBack",         "-")
+        wcgb= t.get("wildCardGamesBack", "-")
+        pct = w / (w + l) if (w + l) > 0 else 0.0
+        streak = t.get("streak", {})
+        strk   = streak.get("streakCode", "")
+        elim   = t.get("wildCardEliminationNumber", "-")
+        return {
+            "id":           t.get("team", {}).get("id"),
+            "name":         t.get("team", {}).get("name", ""),
+            "abbr":         t.get("team", {}).get("abbreviation", ""),
+            "div_rank":     int(t.get("divisionRank", 99) or 99),
+            "wc_rank":      int(t.get("wildCardRank",  99) or 99) if t.get("wildCardRank") else 99,
+            "league_rank":  int(t.get("leagueRank",    99) or 99),
+            "w":            w,
+            "l":            l,
+            "pct":          pct,
+            "pct_str":      t.get("leagueRecord", {}).get("pct", ".000"),
+            "gb":           "—" if str(gb)   in ("-", "0", "0.0") else gb,
+            "wcgb":         "—" if str(wcgb) in ("-", "0", "0.0") else wcgb,
+            "streak":       strk,
+            "rs":           t.get("runsScored",  0),
+            "ra":           t.get("runsAllowed", 0),
+            "diff":         t.get("runDifferential", 0),
+            "clinched":     t.get("clinched",         False),
+            "div_champ":    t.get("divisionChamp",    False),
+            "wc_leader":    t.get("wildCardLeader",   False),
+            "has_wc":       t.get("hasWildcard",      False),
+            "div_winner":   div_winner,
+            "elim_wc":      elim,
+            "last_updated": t.get("lastUpdated", ""),
+        }
+
+    def _build_league(league_id: int) -> dict:
+        divisions   = {}
+        all_teams   = []
+        last_updated = ""
+
+        for rec in records:
+            if rec.get("league", {}).get("id") != league_id:
+                continue
+            div_name = rec.get("division", {}).get("name", "")
+            teams    = rec.get("teamRecords", [])
+            rows     = []
+            for t in teams:
+                is_winner = int(t.get("divisionRank", 99) or 99) == 1
+                row = _team_row(t, is_winner)
+                rows.append(row)
+                all_teams.append(row)
+                if row["last_updated"]:
+                    last_updated = row["last_updated"]
+            rows.sort(key=lambda x: x["div_rank"])
+            divisions[div_name] = rows
+
+        # Wild card: non-division-winners sorted by pct desc
+        non_winners = [t for t in all_teams if not t["div_winner"]]
+        non_winners.sort(key=lambda x: (-x["pct"], x["l"]))
+        for i, t in enumerate(non_winners):
+            t["wc_pos"] = i + 1   # 1-3 = in, 4+ = out
+
+        # Div winners sorted by record for seeding
+        div_winners = sorted([t for t in all_teams if t["div_winner"]],
+                             key=lambda x: (-x["pct"], x["l"]))
+        for i, t in enumerate(div_winners):
+            t["seed"] = i + 1
+
+        playoff_ids = {t["id"] for t in div_winners} | {t["id"] for t in non_winners[:3]}
+
+        return {
+            "divisions":    [{"name": k, "teams": v} for k, v in divisions.items()],
+            "div_winners":  div_winners,
+            "wildcard":     non_winners,
+            "playoff_ids":  playoff_ids,
+            "last_updated": last_updated,
+        }
+
+    al = _build_league(103)
+    nl = _build_league(104)
+    lu = al["last_updated"] or nl["last_updated"]
+
+    return {
+        "al":           al,
+        "nl":           nl,
+        "rangers_id":   RANGERS_ID,
+        "last_updated": lu,
+    }
+
+
+@app.route("/playoff")
+def playoff_picture():
+    db.init_db()
+    data = fetch_playoff_picture()
+    return render_template("playoff.html", pp=data)
+
+
 @app.route("/sync", methods=["POST"])
 def trigger_sync():
-    """Run the MLB API sync and redirect back with a status message."""
+    """Run the MLB API sync, then backfill any missing weather. Redirect with status."""
     try:
         sync_module.sync()
-        flash("Sync complete — database is up to date.", "success")
+        filled = backfill_weather()
+        msg = "Sync complete — database is up to date."
+        if filled:
+            msg += f" Weather backfilled for {filled} game(s)."
+        flash(msg, "success")
     except Exception as exc:
         flash(f"Sync failed: {exc}", "danger")
     return redirect(request.referrer or url_for("index"))

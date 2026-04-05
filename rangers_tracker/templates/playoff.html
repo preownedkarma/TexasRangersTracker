@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Playoff Picture{% endblock %}
+
+{% block head_extra %}
+<style>
+  .pp-league-header {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #aac4ff;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 2px solid #1e3a6e;
+    padding-bottom: 6px;
+    margin-bottom: 14px;
+  }
+  .pp-section-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #556;
+    margin: 18px 0 6px 0;
+  }
+  .pp-slot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 5px;
+    margin-bottom: 4px;
+    background: #0d1f3c;
+    border: 1px solid #1a2e50;
+    transition: border-color 0.15s;
+  }
+  .pp-slot:hover { border-color: #3a5a9e; }
+  .pp-slot.pp-in     { border-left: 3px solid #28a745; }
+  .pp-slot.pp-bubble { border-left: 3px solid #ffc107; background: #111f0e; }
+  .pp-slot.pp-out    { border-left: 3px solid #444; opacity: 0.7; }
+  .pp-slot.pp-rangers { background: #0a2040; border-color: #3a6aae; }
+  .pp-seed {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #556;
+    min-width: 22px;
+    text-align: center;
+  }
+  .pp-team-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #cdd9f0;
+    flex: 1;
+  }
+  .pp-team-name.tex { color: #7cb3ff; }
+  .pp-record {
+    font-size: 0.82rem;
+    color: #8899bb;
+    min-width: 55px;
+    text-align: right;
+  }
+  .pp-gb {
+    font-size: 0.78rem;
+    color: #6c757d;
+    min-width: 48px;
+    text-align: right;
+  }
+  .pp-streak {
+    font-size: 0.72rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    min-width: 34px;
+    text-align: center;
+    font-weight: 700;
+  }
+  .pp-streak.win  { background: #0d2d0d; color: #28a745; }
+  .pp-streak.loss { background: #2d0d0d; color: #dc3545; }
+  .pp-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+  .badge-in   { background: #0d3320; color: #28a745; }
+  .badge-wc   { background: #2d2000; color: #ffc107; }
+  .badge-out  { background: #222; color: #6c757d; }
+  .badge-div  { background: #0a2050; color: #7cb3ff; }
+  .badge-elim { background: #3d0000; color: #dc3545; }
+
+  /* bracket seeds box */
+  .bracket-box {
+    background: #071428;
+    border: 1px solid #1e3a6e;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+  }
+  .bracket-seed { font-size: 0.75rem; color: #556; margin-right: 6px; }
+  .bracket-team { font-size: 0.88rem; font-weight: 600; color: #cdd9f0; }
+  .bracket-team.tex { color: #7cb3ff; }
+  .bracket-rec  { font-size: 0.75rem; color: #8899bb; margin-left: auto; }
+  .last-updated { font-size: 0.72rem; color: #556; }
+
+  .div-table th, .div-table td { font-size: 0.82rem; white-space: nowrap; }
+  .div-table .tex-row td { color: #aac4ff; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if not pp %}
+  <div class="alert alert-warning">Unable to load standings. Try again shortly.</div>
+{% else %}
+
+<div class="d-flex align-items-baseline justify-content-between mb-3 flex-wrap gap-2">
+  <h4 class="section-title mb-0">2026 MLB Playoff Picture</h4>
+  {% if pp.last_updated %}
+    <span class="last-updated">Updated {{ pp.last_updated[:10] }}</span>
+  {% endif %}
+</div>
+
+{% macro streak_badge(strk) %}
+  {% if strk %}
+    {% set is_win = strk[0] == 'W' %}
+    <span class="pp-streak {{ 'win' if is_win else 'loss' }}">{{ strk }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro diff_str(d) %}
+  {% if d > 0 %}+{{ d }}{% elif d < 0 %}{{ d }}{% else %}E{% endif %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════════════
+   League macro — renders one full league (AL or NL)
+═══════════════════════════════════════════════════════════════════ #}
+{% macro render_league(league_data, league_name) %}
+<div class="pp-league-header">{{ league_name }}</div>
+
+{# ── Playoff bracket (seeded) ──────────────────────────────────── #}
+<div class="row g-3 mb-3">
+
+  {# Division winners – seeds 1-3 #}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="pp-section-label">Division Winners</div>
+    {% for t in league_data.div_winners %}
+    <div class="bracket-box d-flex align-items-center">
+      <span class="bracket-seed">#{{ t.seed }}</span>
+      <span class="bracket-team {{ 'tex' if t.id == pp.rangers_id }}">{{ t.name }}</span>
+      <span class="bracket-rec ms-auto">{{ t.w }}-{{ t.l }}</span>
+    </div>
+    {% else %}
+    <div class="text-secondary" style="font-size:0.82rem;">No data yet.</div>
+    {% endfor %}
+  </div>
+
+  {# Wild card spots – seeds 4-6 #}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="pp-section-label">Wild Card (Top 3)</div>
+    {% for t in league_data.wildcard[:3] %}
+    <div class="bracket-box d-flex align-items-center">
+      <span class="bracket-seed">WC{{ t.wc_pos }}</span>
+      <span class="bracket-team {{ 'tex' if t.id == pp.rangers_id }}">{{ t.name }}</span>
+      <span class="bracket-rec ms-auto">{{ t.w }}-{{ t.l }}
+        <span style="font-size:0.68rem; color:#6c757d;">
+          {% if t.wcgb == '—' %}(WC Lead){% else %}({{ t.wcgb }} back){% endif %}
+        </span>
+      </span>
+    </div>
+    {% else %}
+    <div class="text-secondary" style="font-size:0.82rem;">No data yet.</div>
+    {% endfor %}
+  </div>
+
+  {# On the bubble – next 3 out #}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="pp-section-label">On the Bubble</div>
+    {% for t in league_data.wildcard[3:6] %}
+    <div class="bracket-box d-flex align-items-center" style="opacity:0.75;">
+      <span class="bracket-seed" style="color:#6c757d;">WC{{ t.wc_pos }}</span>
+      <span class="bracket-team {{ 'tex' if t.id == pp.rangers_id }}" style="color:#8899bb;">{{ t.name }}</span>
+      <span class="bracket-rec ms-auto" style="color:#6c757d;">{{ t.w }}-{{ t.l }}
+        <span style="font-size:0.68rem;">({{ t.wcgb }} back)</span>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>{# /bracket row #}
+
+{# ── Full division standings ───────────────────────────────────── #}
+{% for div in league_data.divisions %}
+<h6 style="color:#8899bb; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em; margin-top:18px; margin-bottom:6px;">
+  {{ div.name }}
+</h6>
+<div class="table-responsive mb-2">
+<table class="table table-sm table-bordered table-rangers div-table align-middle mb-0">
+  <thead>
+    <tr>
+      <th style="width:22px;"></th>
+      <th>Team</th>
+      <th title="Wins">W</th>
+      <th title="Losses">L</th>
+      <th title="Win Percentage">PCT</th>
+      <th title="Games Behind division leader">GB</th>
+      <th title="Wild Card Games Behind">WC-GB</th>
+      <th title="Run Differential">DIFF</th>
+      <th title="Current Streak">STRK</th>
+      <th title="Playoff Status">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in div.teams %}
+    {% set in_playoffs = t.id in league_data.playoff_ids %}
+    {% set is_tex = t.id == pp.rangers_id %}
+    <tr class="{{ 'tex-row' if is_tex }}">
+      <td class="text-center" style="font-size:0.72rem; color:#556;">{{ t.div_rank }}</td>
+      <td>
+        {% if is_tex %}<strong>{% endif %}
+        {{ t.name }}
+        {% if is_tex %}</strong>{% endif %}
+        {% if t.div_champ %}
+          <span class="pp-badge badge-div ms-1">DIV</span>
+        {% elif t.div_winner and not t.div_champ %}
+          <span class="pp-badge badge-div ms-1">1st</span>
+        {% endif %}
+      </td>
+      <td>{{ t.w }}</td>
+      <td>{{ t.l }}</td>
+      <td>{{ t.pct_str }}</td>
+      <td>{{ t.gb }}</td>
+      <td>
+        {% if t.div_winner %}
+          <span style="color:#556;">—</span>
+        {% else %}
+          {{ t.wcgb }}
+        {% endif %}
+      </td>
+      <td class="{{ 'stat-good' if t.diff > 0 else ('stat-bad' if t.diff < 0 else '') }}">
+        {{ diff_str(t.diff) }}
+      </td>
+      <td>{{ streak_badge(t.streak) }}</td>
+      <td>
+        {% if t.div_winner and not t.div_champ %}
+          <span class="pp-badge badge-in">In</span>
+        {% elif t.div_champ %}
+          <span class="pp-badge badge-in">Clinched</span>
+        {% elif not t.div_winner and t.wc_pos <= 3 %}
+          <span class="pp-badge badge-in">WC In</span>
+        {% elif not t.div_winner and t.wc_pos <= 6 %}
+          <span class="pp-badge badge-wc">Bubble</span>
+        {% else %}
+          <span class="pp-badge badge-out">Out</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endfor %}
+
+{% endmacro %}
+
+{# ═══════════════════ Render both leagues ═════════════════════════ #}
+<div class="row g-4">
+  <div class="col-12 col-xxl-6">
+    {{ render_league(pp.al, "American League") }}
+  </div>
+  <div class="col-12 col-xxl-6">
+    {{ render_league(pp.nl, "National League") }}
+  </div>
+</div>
+
+<p class="text-secondary mt-3" style="font-size:0.72rem;">
+  Standings from MLB Stats API &mdash;
+  <span style="color:#28a745;">In</span> = currently in playoff position &nbsp;|&nbsp;
+  <span style="color:#ffc107;">Bubble</span> = 4th–6th in WC &nbsp;|&nbsp;
+  <span style="color:#7cb3ff;">TEX</span> highlighted in blue &nbsp;|&nbsp;
+  DIFF = run differential
+</p>
+
+{% endif %}
+{% endblock %}

@@ -133,6 +133,82 @@
   <strong>BABIP &lt; .270:</strong> poor contact or bad luck
 </p>
 
+{# ── Per-game box scores ─────────────────────────────────────────────────── #}
+{% if game_boxes %}
+<h5 class="section-title mt-4">Game Box Scores</h5>
+<p class="text-secondary" style="font-size:0.82rem;">Newest games first. Click a game to expand.</p>
+<div class="accordion mb-4" id="trendsAccordion">
+{% for g in game_boxes %}
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="th{{ loop.index }}">
+      <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#tc{{ loop.index }}"
+              aria-expanded="false">
+        <span style="min-width:90px;">{{ g.date }}</span>&nbsp;
+        <span class="me-2 text-secondary" style="font-size:0.85rem;">vs {{ g.opponent }}</span>
+        {% if g.result == 'W' %}<span class="result-w me-2">W</span>{% else %}<span class="result-l me-2">L</span>{% endif %}
+        <span class="text-secondary" style="font-size:0.82rem;">{{ g.score }}</span>
+        <a href="/game/{{ g.game_pk }}" class="btn btn-outline-secondary btn-sm py-0 px-1 ms-3" style="font-size:0.68rem;" onclick="event.stopPropagation()">Full</a>
+      </button>
+    </h2>
+    <div id="tc{{ loop.index }}" class="accordion-collapse collapse"
+         data-bs-parent="#trendsAccordion">
+      <div class="accordion-body py-2">
+        <div class="row g-3">
+          <div class="col-12 col-xl-7">
+            <h6 style="color:#aac4ff; font-size:0.82rem;">Batting</h6>
+            <div class="table-scroll">
+            <table class="table table-sm table-bordered table-rangers" style="font-size:0.8rem;">
+              <thead><tr><th>Player</th><th>AB</th><th>H</th><th>HR</th><th>RBI</th><th>BB</th><th>SO</th><th>AVG</th></tr></thead>
+              <tbody>
+                {% for b in g.batters %}
+                {% set b_avg_f = b.avg | float %}
+                <tr>
+                  <td><a class="player-link" href="/player/{{ b.player_id }}">{{ b.player_name }}</a></td>
+                  <td>{{ b.ab }}</td><td>{{ b.h }}</td>
+                  <td>{% if b.hr > 0 %}<span class="stat-warn">{{ b.hr }}</span>{% else %}0{% endif %}</td>
+                  <td>{{ b.rbi }}</td><td>{{ b.bb }}</td><td>{{ b.so }}</td>
+                  <td class="{% if b_avg_f >= 0.300 %}stat-good{% elif b_avg_f < 0.200 and b.ab >= 2 %}stat-bad{% endif %}">{{ b.avg }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-secondary">No batter data.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </div>
+          <div class="col-12 col-xl-5">
+            <h6 style="color:#aac4ff; font-size:0.82rem;">Pitching</h6>
+            <div class="table-scroll">
+            <table class="table table-sm table-bordered table-rangers" style="font-size:0.8rem;">
+              <thead><tr><th>Player</th><th>IP</th><th>H</th><th>ER</th><th>BB</th><th>SO</th><th>WHIP</th><th>QS</th></tr></thead>
+              <tbody>
+                {% for p in g.pitchers %}
+                {% set p_whip_f = p.whip | float if p.whip != '-.--' else 1.40 %}
+                <tr>
+                  <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+                  <td>{{ p.ip_str }}</td><td>{{ p.h }}</td>
+                  <td>{% if p.er >= 4 %}<span class="stat-bad">{{ p.er }}</span>{% else %}{{ p.er }}{% endif %}</td>
+                  <td>{{ p.bb }}</td><td>{{ p.so }}</td>
+                  <td class="{% if p_whip_f <= 1.20 %}stat-good{% elif p_whip_f >= 1.60 %}stat-bad{% elif p_whip_f >= 1.40 %}stat-warn{% endif %}">{{ p.whip }}</td>
+                  <td class="{% if p.qs == 'YES' %}qs-yes{% else %}qs-no{% endif %}">{{ p.qs }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-secondary">No pitcher data.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
@@ -211,6 +287,19 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+});
+
+// Accordion toggle for trends box scores
+document.querySelectorAll("#trendsAccordion .accordion-button").forEach(btn => {
+  btn.addEventListener("click", function () {
+    const targetId = this.getAttribute("data-bs-target");
+    const panel    = document.querySelector(targetId);
+    if (!panel) return;
+    const isOpen = panel.classList.contains("show");
+    document.querySelectorAll("#trendsAccordion .accordion-collapse").forEach(p => p.classList.remove("show"));
+    document.querySelectorAll("#trendsAccordion .accordion-button").forEach(b => { b.classList.add("collapsed"); b.setAttribute("aria-expanded","false"); });
+    if (!isOpen) { panel.classList.add("show"); this.classList.remove("collapsed"); this.setAttribute("aria-expanded","true"); }
+  });
 });
 </script>
 {% endblock %}

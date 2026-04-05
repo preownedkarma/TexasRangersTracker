@@ -33,6 +33,7 @@
       <th>H/A</th>
       <th>Res</th>
       <th>Score</th>
+      <th></th>
       <th>Venue</th>
       <th title="At-Bats">AB</th>
       <th title="Hits">H</th>
@@ -65,6 +66,7 @@
         {% endif %}
       </td>
       <td>{{ g.score }}</td>
+      <td><a href="/game/{{ g.game_pk }}" class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:0.7rem;">Box</a></td>
       <td style="font-size:0.78rem; color:#8899bb;">
         {{ g.venue }}
         {% if g.roof_status and g.roof_status != 'Open Air' %}
@@ -305,7 +307,7 @@
     <table class="table table-sm table-bordered table-rangers">
       <thead>
         <tr>
-          <th>Player</th><th>IP</th><th>H</th><th>ER</th>
+          <th>Player</th><th>GS</th><th>QS</th><th>IP</th><th>H</th><th>ER</th>
           <th>BB</th><th>SO</th><th>ERA</th><th>WHIP</th><th>K/BB</th>
         </tr>
       </thead>
@@ -315,6 +317,8 @@
         {% set e_f = p.era  | float if p.era  != '-.--' else 5.0  %}
         <tr>
           <td><a class="player-link" href="/player/{{ p.player_id }}">{{ p.player_name }}</a></td>
+          <td>{{ p.gs }}</td>
+          <td class="{% if p.qs == p.gs and p.gs > 0 %}stat-good{% elif p.qs == 0 and p.gs > 0 %}stat-bad{% endif %}">{{ p.qs }}</td>
           <td>{{ p.ip }}</td>
           <td>{{ p.h }}</td>
           <td>{% if p.er >= 4 %}<span class="stat-bad">{{ p.er }}</span>{% else %}{{ p.er }}{% endif %}</td>
@@ -335,6 +339,8 @@
         {% if series.cum_pitchers %}
         <tr class="totals-row">
           <td><em>Totals</em></td>
+          <td>&mdash;</td>
+          <td>&mdash;</td>
           <td>{{ series.cum_ip }}</td>
           <td>&mdash;</td>
           <td>{{ series.cum_er }}</td>
